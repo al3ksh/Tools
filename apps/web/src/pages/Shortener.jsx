@@ -1,0 +1,320 @@
+import { useState, useEffect } from 'react';
+import { api, formatDate } from '../api';
+import { Link as LinkIcon, Sparkles, CheckCircle, Copy, Clock, List, ClipboardList, XCircle } from 'lucide-react';
+import Pagination from '../components/Pagination';
+
+function Shortener({ sessionId }) {
+  const [url, setUrl] = useState('');
+  const [slug, setSlug] = useState('');
+  const [links, setLinks] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [createdLink, setCreatedLink] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  // Pagination State
+  const [myLinksPage, setMyLinksPage] = useState(1);
+  const [allLinksPage, setAllLinksPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
+  const fetchLinks = async () => {
+    try {
+      const data = await api.getShortlinks();
+      setLinks(data);
+    } catch (err) {
+      console.error('Failed to fetch links:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchLinks();
+    const interval = setInterval(fetchLinks, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!url.trim()) return;
+
+    setLoading(true);
+    setError('');
+    setCreatedLink(null);
+
+    try {
+      const result = await api.createShortlink(url, slug || null, sessionId);
+      setCreatedLink(result);
+      setUrl('');
+      setSlug('');
+      showToast('Short link created!');
+      fetchLinks();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    showToast('Copied to clipboard!');
+  };
+
+  const getBaseUrl = () => {
+    return window.location.origin;
+  };
+
+  const myLinks = links.filter(l => l.sessionId === sessionId);
+
+  return (
+    <>
+      <div className="page-header">
+        <div className="page-title">
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <LinkIcon size={24} /> Link Shortener
+          </h2>
+          <div className="subtitle">Create short links and track clicks</div>
+        </div>
+      </div>
+
+      <div className="content">
+        {/* Form */}
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title"><Sparkles size={18} /> Create Short Link</div>
+          </div>
+          <div className="card-body">
+            <form onSubmit={handleSubmit}>
+              <div className="form-group">
+                <label className="form-label">URL to Shorten</label>
+                <input
+                  type="url"
+                  className="form-input"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://example.com/very/long/url"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Custom Slug (optional)</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={slug}
+                  onChange={(e) => setSlug(e.target.value)}
+                  placeholder="my-link (leave empty for random)"
+                  pattern="[a-zA-Z0-9_-]+"
+                  title="Only letters, numbers, hyphens and underscores"
+                />
+                <div className="form-help">Only letters, numbers, hyphens and underscores allowed</div>
+              </div>
+
+              {error && (
+                <div style={{ color: 'var(--error)', marginBottom: '15px', padding: '10px', background: 'rgba(231, 76, 60, 0.1)', borderRadius: '6px' }}>
+                  {error}
+                </div>
+              )}
+
+              {createdLink && (
+                <div style={{
+                  background: 'rgba(46, 204, 113, 0.1)',
+                  padding: '15px',
+                  borderRadius: '6px',
+                  marginBottom: '15px',
+                  border: '1px solid rgba(46, 204, 113, 0.3)'
+                }}>
+                  <div style={{ marginBottom: '8px', fontWeight: '500', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CheckCircle size={16} /> Short link created:
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <code style={{
+                      background: 'var(--bg)',
+                      padding: '8px 12px',
+                      borderRadius: '4px',
+                      flex: 1,
+                      fontSize: '14px'
+                    }}>
+                      {createdLink.shortUrl}
+                    </code>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => copyToClipboard(createdLink.shortUrl)}
+                    >
+                      <Copy size={14} /> Copy
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <button type="submit" className="btn btn-primary" disabled={loading || !url.trim()}>
+                {loading ? <><Clock size={16} /> Creating...</> : <><LinkIcon size={16} /> Create Short Link</>}
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* My Links */}
+        {myLinks.length > 0 && (
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title"><List size={18} /> My Links ({myLinks.length})</div>
+            </div>
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Short URL</th>
+                    <th>Target URL</th>
+                    <th>Clicks</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {myLinks.slice((myLinksPage - 1) * ITEMS_PER_PAGE, myLinksPage * ITEMS_PER_PAGE).map(link => (
+                    <tr key={link.slug}>
+                      <td>
+                        <code style={{
+                          background: 'var(--bg-tertiary)',
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '12px'
+                        }}>
+                          {link.slug}
+                        </code>
+                      </td>
+                      <td>
+                        <a
+                          href={link.targetUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--accent)', textDecoration: 'none' }}
+                          title={link.targetUrl}
+                        >
+                          {link.targetUrl.length > 50 ? link.targetUrl.slice(0, 50) + '...' : link.targetUrl}
+                        </a>
+                      </td>
+                      <td>
+                        <span style={{ fontWeight: '500' }}>{link.clicks}</span>
+                      </td>
+                      <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                        {formatDate(link.createdAt)}
+                      </td>
+                      <td>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => copyToClipboard(`${getBaseUrl()}/s/${link.slug}`)}
+                        >
+                          <Copy size={14} /> Copy
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination
+              currentPage={myLinksPage}
+              totalItems={myLinks.length}
+              itemsPerPage={ITEMS_PER_PAGE}
+              onPageChange={setMyLinksPage}
+            />
+          </div>
+        )}
+
+        {/* All Links */}
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title"><ClipboardList size={18} /> All Links</div>
+          </div>
+          <div className="table-container">
+            {links.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon"><LinkIcon size={64} style={{ margin: '0 auto' }} /></div>
+                <div className="empty-title">No links yet</div>
+                <p>Create your first short link above</p>
+              </div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Short URL</th>
+                    <th>Target URL</th>
+                    <th>Clicks</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {links.slice((allLinksPage - 1) * ITEMS_PER_PAGE, allLinksPage * ITEMS_PER_PAGE).map(link => (
+                    <tr key={link.slug}>
+                      <td>
+                        <code style={{
+                          background: 'var(--bg-tertiary)',
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '12px'
+                        }}>
+                          {link.slug}
+                        </code>
+                      </td>
+                      <td>
+                        <a
+                          href={link.targetUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: 'var(--accent)', textDecoration: 'none' }}
+                          title={link.targetUrl}
+                        >
+                          {link.targetUrl.length > 50 ? link.targetUrl.slice(0, 50) + '...' : link.targetUrl}
+                        </a>
+                      </td>
+                      <td>
+                        <span style={{ fontWeight: '500' }}>{link.clicks}</span>
+                      </td>
+                      <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                        {formatDate(link.createdAt)}
+                      </td>
+                      <td>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => copyToClipboard(`${getBaseUrl()}/s/${link.slug}`)}
+                        >
+                          <Copy size={14} /> Copy
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+          {links.length > 0 && (
+            <Pagination
+              currentPage={allLinksPage}
+              totalItems={links.length}
+              itemsPerPage={ITEMS_PER_PAGE}
+              onPageChange={setAllLinksPage}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`toast toast-${toast.type}`}>
+          {toast.type === 'success' ? <CheckCircle size={16} /> : <XCircle size={16} />} {toast.message}
+        </div>
+      )}
+    </>
+  );
+}
+
+export default Shortener;

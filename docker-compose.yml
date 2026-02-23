@@ -1,0 +1,32 @@
+services:
+  # API server (serves web UI on port 3000)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "3000:3001"
+    volumes:
+      - ./data:/data
+    env_file:
+      - .env
+    environment:
+      - DATA_DIR=/data
+      - PORT=3001
+    restart: unless-stopped
+
+  # Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    volumes:
+      - ./data:/data
+    environment:
+      - DATA_DIR=/data
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  data:

@@ -1,0 +1,49 @@
+# Build stage
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json ./
+COPY apps/web/package.json ./apps/web/
+COPY packages/shared/package.json ./packages/shared/
+
+RUN npm install
+
+COPY apps/web ./apps/web
+COPY packages/shared ./packages/shared
+
+WORKDIR /app/apps/web
+RUN npm run build
+
+# Production stage - copy build to API
+FROM node:20-alpine
+
+# Install yt-dlp and ffmpeg
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    ffmpeg \
+    curl \
+    && pip3 install --no-cache-dir yt-dlp --break-system-packages
+
+WORKDIR /app
+
+COPY package.json ./
+COPY apps/api/package.json ./apps/api/
+COPY packages/shared/package.json ./packages/shared/
+
+RUN npm install
+
+COPY apps/api ./apps/api
+COPY packages/shared ./packages/shared
+
+# Copy web build
+COPY --from=builder /app/apps/web/dist ./apps/web/dist
+
+WORKDIR /app/apps/api
+
+RUN mkdir -p /data
+
+EXPOSE 3001
+
+CMD ["npm", "start"]

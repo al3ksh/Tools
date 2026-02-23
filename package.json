@@ -1,0 +1,21 @@
+{
+  "name": "tools-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:worker\" \"npm run dev:web\"",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:worker": "npm run dev --workspace=apps/worker",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=apps/web",
+    "start:api": "npm run start --workspace=apps/api",
+    "start:worker": "npm run start --workspace=apps/worker"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
