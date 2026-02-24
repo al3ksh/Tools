@@ -130,7 +130,7 @@ function Downloader({ sessionId }) {
 
       <div className="content">
         {/* Form and Preview Layout */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: '20px', alignItems: 'start', marginBottom: '20px' }}>
+        <div className="downloader-layout">
 
           {/* Form */}
           <div className="card" style={{ margin: 0 }}>
@@ -179,7 +179,7 @@ function Downloader({ sessionId }) {
           </div>
 
           {/* Side Preview Area */}
-          <div style={{ width: '300px' }}>
+          <div className="downloader-preview">
             {ytId || genericPreview ? (
               <div style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)', backgroundColor: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', backgroundColor: 'var(--bg-card)' }}>

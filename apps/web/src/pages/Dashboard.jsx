@@ -69,7 +69,7 @@ function Dashboard({ sessionId }) {
         {/* Session Banner */}
         <div className="session-banner">
           <div className="session-info">
-            <strong>Your session</strong> - Files expire after 1h (Admin: never)
+            <strong>Your session</strong> - Files expire after 1h
           </div>
           <div className="session-countdown">
             {stats.mine} jobs created

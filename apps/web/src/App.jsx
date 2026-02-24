@@ -1,5 +1,5 @@
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Sun, Moon, Shield, X } from 'lucide-react';
+import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
+import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Sun, Moon, Shield, X, Menu, Cookie, FileText } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import Dashboard from './pages/Dashboard';
 import Downloader from './pages/Downloader';
@@ -8,6 +8,7 @@ import Shortener from './pages/Shortener';
 import Drop from './pages/Drop';
 import DropView from './pages/DropView';
 import AdminPanel from './pages/AdminPanel';
+import PrivacyPolicy from './pages/PrivacyPolicy';
 import './index.css';
 
 function App() {
@@ -43,6 +44,8 @@ function App() {
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [cookieConsent, setCookieConsent] = useState(() => localStorage.getItem('cookieConsent'));
 
   const handleAdminToggle = () => {
     if (isAdmin) {
@@ -99,36 +102,40 @@ function App() {
     <>
       <BrowserRouter>
         <div className="app-container">
-          <aside className="sidebar">
+          <button className="mobile-menu-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            <Menu size={20} />
+          </button>
+          <div className={`sidebar-overlay${sidebarOpen ? ' visible' : ''}`} onClick={() => setSidebarOpen(false)} />
+          <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
             <div className="sidebar-header">
               <h1><Wrench size={24} color="var(--accent)" /> <span>Tools</span></h1>
             </div>
             <nav className="sidebar-nav">
               <div className="nav-section">Menu</div>
-              <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
                 <span className="nav-icon"><LayoutDashboard size={18} /></span>
                 <span>Dashboard</span>
               </NavLink>
-              <NavLink to="/downloader" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavLink to="/downloader" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
                 <span className="nav-icon"><Download size={18} /></span>
                 <span>Downloader</span>
               </NavLink>
-              <NavLink to="/converter" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavLink to="/converter" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
                 <span className="nav-icon"><FileAudio size={18} /></span>
                 <span>Converter</span>
               </NavLink>
-              <NavLink to="/shortener" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavLink to="/shortener" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
                 <span className="nav-icon"><LinkIcon size={18} /></span>
                 <span>Shortener</span>
               </NavLink>
-              <NavLink to="/drop" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavLink to="/drop" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
                 <span className="nav-icon"><FolderOpen size={18} /></span>
                 <span>Drop</span>
               </NavLink>
               {isAdmin && (
                 <>
                   <div className="nav-section" style={{ marginTop: '16px' }}>Admin</div>
-                  <NavLink to="/admin" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+                  <NavLink to="/admin" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
                     <span className="nav-icon"><Shield size={18} /></span>
                     <span>Manage All</span>
                   </NavLink>
@@ -167,6 +174,17 @@ function App() {
                   {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
                 </button>
               </div>
+              <NavLink
+                to="/privacy"
+                onClick={() => setSidebarOpen(false)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  marginTop: '10px', fontSize: '11px', color: 'var(--text-secondary)',
+                  textDecoration: 'none', opacity: 0.6
+                }}
+              >
+                <FileText size={12} /> Privacy Policy
+              </NavLink>
             </div>
           </aside>
           <main className="main-content">
@@ -178,6 +196,7 @@ function App() {
               <Route path="/drop" element={<Drop sessionId={sessionId} />} />
               <Route path="/d/:token" element={<DropView />} />
               {isAdmin && <Route path="/admin" element={<AdminPanel />} />}
+              <Route path="/privacy" element={<PrivacyPolicy />} />
             </Routes>
           </main>
         </div>
@@ -226,6 +245,30 @@ function App() {
                 </div>
               </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cookie Consent Banner */}
+      {!cookieConsent && (
+        <div className="cookie-banner">
+          <div className="cookie-banner-text">
+            <Cookie size={18} />
+            <span>We use cookies for session management. <a href="/privacy" style={{ color: 'var(--accent)' }}>Learn more</a></span>
+          </div>
+          <div className="cookie-banner-actions">
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => { setCookieConsent('rejected'); localStorage.setItem('cookieConsent', 'rejected'); }}
+            >
+              Reject
+            </button>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => { setCookieConsent('accepted'); localStorage.setItem('cookieConsent', 'accepted'); }}
+            >
+              Accept
+            </button>
           </div>
         </div>
       )}
