@@ -68,13 +68,36 @@ router.post('/upload', dropSizeLimit, upload.single('file'), (req, res) => {
 router.get('/list', (req, res) => {
   try {
     const sessionId = req.query.sessionId;
+    const all = req.query.all === 'true';
     let drops;
-    if (sessionId) {
+    if (all && req.isAdmin) {
+      drops = statements.getAllDrops.all();
+    } else if (sessionId) {
       drops = statements.getDropsBySession.all(sessionId);
     } else {
       drops = statements.getAllDrops.all();
     }
     res.json(drops);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/drop/:token - admin-only delete
+router.delete('/:token', (req, res) => {
+  try {
+    if (!req.isAdmin) {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const { token } = req.params;
+    const drop = statements.getDrop.get(token);
+    if (drop && drop.path) {
+      const fs = require('fs');
+      const fullPath = require('path').join(require('../db/database').DATA_DIR, drop.path);
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    }
+    statements.deleteDrop.run(token);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

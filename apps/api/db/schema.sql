@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS shortlinks (
   slug TEXT PRIMARY KEY,
   targetUrl TEXT NOT NULL,
   createdAt TEXT NOT NULL,
-  clicks INTEGER DEFAULT 0
+  clicks INTEGER DEFAULT 0,
+  sessionId TEXT
 );
 
 -- Drops table

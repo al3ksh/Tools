@@ -7,6 +7,7 @@ import Converter from './pages/Converter';
 import Shortener from './pages/Shortener';
 import Drop from './pages/Drop';
 import DropView from './pages/DropView';
+import AdminPanel from './pages/AdminPanel';
 import './index.css';
 
 function App() {
@@ -124,6 +125,15 @@ function App() {
                 <span className="nav-icon"><FolderOpen size={18} /></span>
                 <span>Drop</span>
               </NavLink>
+              {isAdmin && (
+                <>
+                  <div className="nav-section" style={{ marginTop: '16px' }}>Admin</div>
+                  <NavLink to="/admin" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+                    <span className="nav-icon"><Shield size={18} /></span>
+                    <span>Manage All</span>
+                  </NavLink>
+                </>
+              )}
             </nav>
             <div className="sidebar-footer">
               <div className="user-profile-card">
@@ -167,6 +177,7 @@ function App() {
               <Route path="/shortener" element={<Shortener sessionId={sessionId} />} />
               <Route path="/drop" element={<Drop sessionId={sessionId} />} />
               <Route path="/d/:token" element={<DropView />} />
+              {isAdmin && <Route path="/admin" element={<AdminPanel />} />}
             </Routes>
           </main>
         </div>

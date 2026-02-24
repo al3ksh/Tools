@@ -68,6 +68,14 @@ try {
     db.exec('ALTER TABLE jobs ADD COLUMN sessionId TEXT');
     console.log('Migration: Added sessionId column to jobs');
   }
+
+  // Shortlinks sessionId migration
+  const shortlinkCols = db.prepare("PRAGMA table_info(shortlinks)").all();
+  const shortlinkColNames = shortlinkCols.map(c => c.name);
+  if (!shortlinkColNames.includes('sessionId')) {
+    db.exec('ALTER TABLE shortlinks ADD COLUMN sessionId TEXT');
+    console.log('Migration: Added sessionId column to shortlinks');
+  }
 } catch (err) {
   console.error('Migration error:', err);
 }
@@ -132,8 +140,8 @@ const statements = {
 
   // Shortlinks
   createShortlink: db.prepare(`
-    INSERT INTO shortlinks (slug, targetUrl, createdAt)
-    VALUES (?, ?, ?)
+    INSERT INTO shortlinks (slug, targetUrl, createdAt, sessionId)
+    VALUES (?, ?, ?, ?)
   `),
 
   getShortlink: db.prepare(`
@@ -146,6 +154,14 @@ const statements = {
 
   getAllShortlinks: db.prepare(`
     SELECT * FROM shortlinks ORDER BY createdAt DESC
+  `),
+
+  getShortlinksBySession: db.prepare(`
+    SELECT * FROM shortlinks WHERE sessionId = ? ORDER BY createdAt DESC
+  `),
+
+  deleteShortlink: db.prepare(`
+    DELETE FROM shortlinks WHERE slug = ?
   `),
 
   // Drops
@@ -176,6 +192,10 @@ const statements = {
 
   getExpiredDrops: db.prepare(`
     SELECT * FROM drops WHERE deleted = 0 AND expiresAt < ?
+  `),
+
+  deleteDrop: db.prepare(`
+    DELETE FROM drops WHERE token = ?
   `)
 };
 

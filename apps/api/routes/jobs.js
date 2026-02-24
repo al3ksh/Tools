@@ -6,8 +6,11 @@ const { statements } = require('../db/database');
 router.get('/', (req, res) => {
   try {
     const sessionId = req.query.sessionId;
+    const all = req.query.all === 'true';
     let jobs;
-    if (sessionId) {
+    if (all && req.isAdmin) {
+      jobs = statements.getRecentJobs.all(200);
+    } else if (sessionId) {
       jobs = statements.getJobsBySession.all(sessionId, 50);
     } else {
       jobs = statements.getRecentJobs.all(50);

@@ -64,7 +64,7 @@ export const api = {
     body: JSON.stringify({ url, slug, sessionId }),
   }),
 
-  getShortlinks: () => fetchApi('/shortlinks/list'),
+  getShortlinks: (sessionId) => fetchApi(`/shortlinks/list${sessionId ? `?sessionId=${sessionId}` : ''}`),
 
   // Drop
   uploadDrop: async (file, sessionId) => {
@@ -91,6 +91,13 @@ export const api = {
 
   // Utils
   getPreviewUrl: (url) => fetchApi(`/utils/preview?url=${encodeURIComponent(url)}`),
+
+  // Admin
+  getAllJobs: () => fetchApi('/jobs?all=true'),
+  getAllDrops: () => fetchApi('/drop/list?all=true'),
+  getAllShortlinks: () => fetchApi('/shortlinks/list?all=true'),
+  deleteShortlink: (slug) => fetchApi(`/shortlinks/${slug}`, { method: 'DELETE' }),
+  deleteDrop: (token) => fetchApi(`/drop/${token}`, { method: 'DELETE' }),
 };
 
 export const formatBytes = (bytes) => {

@@ -6,7 +6,7 @@ const { statements } = require('../db/database');
 // POST /api/shorten - create a short link
 router.post('/', (req, res) => {
   try {
-    const { url, slug } = req.body;
+    const { url, slug, sessionId } = req.body;
 
     if (!url) {
       return res.status(400).json({ error: 'URL is required' });
@@ -16,7 +16,7 @@ router.post('/', (req, res) => {
     const createdAt = new Date().toISOString();
 
     try {
-      statements.createShortlink.run(finalSlug, url, createdAt);
+      statements.createShortlink.run(finalSlug, url, createdAt, sessionId || null);
     } catch (err) {
       if (err.message.includes('UNIQUE constraint')) {
         return res.status(409).json({ error: 'Slug already exists' });
@@ -34,11 +34,38 @@ router.post('/', (req, res) => {
   }
 });
 
-// GET /api/shortlinks/list - list all short links
+// GET /api/shortlinks/list - list short links (filtered by session)
 router.get('/list', (req, res) => {
   try {
+    const sessionId = req.query.sessionId;
+    const all = req.query.all === 'true';
+
+    if (all && req.isAdmin) {
+      const links = statements.getAllShortlinks.all();
+      return res.json(links);
+    }
+
+    if (sessionId) {
+      const links = statements.getShortlinksBySession.all(sessionId);
+      return res.json(links);
+    }
+
     const links = statements.getAllShortlinks.all();
     res.json(links);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/shortlinks/:slug - admin-only delete
+router.delete('/:slug', (req, res) => {
+  try {
+    if (!req.isAdmin) {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const { slug } = req.params;
+    statements.deleteShortlink.run(slug);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

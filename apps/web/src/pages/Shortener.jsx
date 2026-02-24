@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api, formatDate } from '../api';
-import { Link as LinkIcon, Sparkles, CheckCircle, Copy, Clock, List, ClipboardList, XCircle } from 'lucide-react';
+import { Link as LinkIcon, Sparkles, CheckCircle, Copy, Clock, List, XCircle } from 'lucide-react';
 import Pagination from '../components/Pagination';
 
 function Shortener({ sessionId }) {
@@ -12,14 +12,12 @@ function Shortener({ sessionId }) {
   const [createdLink, setCreatedLink] = useState(null);
   const [toast, setToast] = useState(null);
 
-  // Pagination State
-  const [myLinksPage, setMyLinksPage] = useState(1);
-  const [allLinksPage, setAllLinksPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
   const fetchLinks = async () => {
     try {
-      const data = await api.getShortlinks();
+      const data = await api.getShortlinks(sessionId);
       setLinks(data);
     } catch (err) {
       console.error('Failed to fetch links:', err);
@@ -67,8 +65,6 @@ function Shortener({ sessionId }) {
   const getBaseUrl = () => {
     return window.location.origin;
   };
-
-  const myLinks = links.filter(l => l.sessionId === sessionId);
 
   return (
     <>
@@ -161,78 +157,9 @@ function Shortener({ sessionId }) {
         </div>
 
         {/* My Links */}
-        {myLinks.length > 0 && (
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title"><List size={18} /> My Links ({myLinks.length})</div>
-            </div>
-            <div className="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Short URL</th>
-                    <th>Target URL</th>
-                    <th>Clicks</th>
-                    <th>Created</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {myLinks.slice((myLinksPage - 1) * ITEMS_PER_PAGE, myLinksPage * ITEMS_PER_PAGE).map(link => (
-                    <tr key={link.slug}>
-                      <td>
-                        <code style={{
-                          background: 'var(--bg-tertiary)',
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          fontSize: '12px'
-                        }}>
-                          {link.slug}
-                        </code>
-                      </td>
-                      <td>
-                        <a
-                          href={link.targetUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ color: 'var(--accent)', textDecoration: 'none' }}
-                          title={link.targetUrl}
-                        >
-                          {link.targetUrl.length > 50 ? link.targetUrl.slice(0, 50) + '...' : link.targetUrl}
-                        </a>
-                      </td>
-                      <td>
-                        <span style={{ fontWeight: '500' }}>{link.clicks}</span>
-                      </td>
-                      <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
-                        {formatDate(link.createdAt)}
-                      </td>
-                      <td>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => copyToClipboard(`${getBaseUrl()}/s/${link.slug}`)}
-                        >
-                          <Copy size={14} /> Copy
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              currentPage={myLinksPage}
-              totalItems={myLinks.length}
-              itemsPerPage={ITEMS_PER_PAGE}
-              onPageChange={setMyLinksPage}
-            />
-          </div>
-        )}
-
-        {/* All Links */}
         <div className="card">
           <div className="card-header">
-            <div className="card-title"><ClipboardList size={18} /> All Links</div>
+            <div className="card-title"><List size={18} /> My Links ({links.length})</div>
           </div>
           <div className="table-container">
             {links.length === 0 ? (
@@ -253,7 +180,7 @@ function Shortener({ sessionId }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {links.slice((allLinksPage - 1) * ITEMS_PER_PAGE, allLinksPage * ITEMS_PER_PAGE).map(link => (
+                  {links.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE).map(link => (
                     <tr key={link.slug}>
                       <td>
                         <code style={{
@@ -298,10 +225,10 @@ function Shortener({ sessionId }) {
           </div>
           {links.length > 0 && (
             <Pagination
-              currentPage={allLinksPage}
+              currentPage={currentPage}
               totalItems={links.length}
               itemsPerPage={ITEMS_PER_PAGE}
-              onPageChange={setAllLinksPage}
+              onPageChange={setCurrentPage}
             />
           )}
         </div>
