@@ -105,7 +105,6 @@ function Converter({ sessionId }) {
       };
 
       await api.createConvertJob(source, options, sessionId);
-      await api.createConvertJob(source, options, sessionId);
       setSelectedFile(null);
       setUploadedPath('');
       showToast('Conversion job added!', 'success');
@@ -314,7 +313,7 @@ function Converter({ sessionId }) {
         {/* All Jobs */}
         <div className="card">
           <div className="card-header">
-            <div className="card-title"><ClipboardList size={18} /> Conversions</div>
+            <div className="card-title"><ClipboardList size={18} /> My Conversions ({jobs.length})</div>
           </div>
           <div className="table-container">
             {jobs.length === 0 ? (

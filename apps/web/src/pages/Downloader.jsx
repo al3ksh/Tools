@@ -13,9 +13,7 @@ function Downloader({ sessionId }) {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [genericPreview, setGenericPreview] = useState(null);
 
-  // Pagination State
   const [myJobsPage, setMyJobsPage] = useState(1);
-  const [allJobsPage, setAllJobsPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
   // Set image loaded back to false when url changes
@@ -220,116 +218,10 @@ function Downloader({ sessionId }) {
           </div>
         </div>
 
-        {/* My Jobs */}
-        {
-          myJobs.length > 0 && (
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title"><List size={18} /> My Downloads ({myJobs.length})</div>
-              </div>
-              <div className="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>URL</th>
-                      <th>Preset</th>
-                      <th>Status</th>
-                      <th>Progress</th>
-                      <th>Created</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {myJobs.slice((myJobsPage - 1) * ITEMS_PER_PAGE, myJobsPage * ITEMS_PER_PAGE).map(job => {
-                      const input = job.inputJson || {};
-                      const shortUrl = input.url ? new URL(input.url).hostname : '-';
-                      return (
-                        <tr key={job.id}>
-                          <td>
-                            <span title={input.url} style={{ cursor: 'help' }}>
-                              {shortUrl}
-                            </span>
-                          </td>
-                          <td>
-                            <span style={{ fontSize: '12px', opacity: 0.8 }}>
-                              {input.preset?.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td>
-                            <span className={`status-badge status-${job.status}`}>
-                              {job.status === 'queued' && <Clock size={14} />}
-                              {job.status === 'running' && <Settings size={14} className="spin" />}
-                              {job.status === 'failed' && <XCircle size={14} />}
-                              {job.status === 'deleted' && <Archive size={14} />}
-                              {job.status}
-                            </span>
-                          </td>
-                          <td>
-                            {job.progress !== null ? (
-                              <div className="progress-wrapper">
-                                <div className="progress-bar">
-                                  <div className="progress-fill" style={{ width: `${job.progress}%` }} />
-                                </div>
-                              </div>
-                            ) : '-'}
-                          </td>
-                          <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
-                            {formatDate(job.createdAt)}
-                          </td>
-                          <td>
-                            {job.status === 'done' && job.outputJson?.files?.length > 0 && (
-                              <a
-                                href={getFileUrl(job.id)}
-                                className="btn btn-success btn-sm"
-                              >
-                                <Download size={14} /> Download
-                              </a>
-                            )}
-                            {(job.status === 'queued' || job.status === 'running') && (
-                              <button
-                                className="btn btn-danger btn-sm"
-                                onClick={() => handleCancel(job.id)}
-                                title="Stop downloading"
-                              >
-                                <XSquare size={14} /> Stop
-                              </button>
-                            )}
-                            {job.status === 'expired' && (
-                              <span style={{ color: 'var(--text-secondary)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <Clock size={12} /> Expired
-                              </span>
-                            )}
-                            {job.status !== 'expired' && job.status !== 'deleted' && job.status !== 'queued' && job.status !== 'running' && (
-                              <button
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => handleDelete(job.id)}
-                                style={{ marginLeft: '5px' }}
-                                title="Delete"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <Pagination
-                currentPage={myJobsPage}
-                totalItems={myJobs.length}
-                itemsPerPage={ITEMS_PER_PAGE}
-                onPageChange={setMyJobsPage}
-              />
-            </div>
-          )
-        }
-
-        {/* All Jobs */}
+        {/* My Downloads */}
         <div className="card">
           <div className="card-header">
-            <div className="card-title"><ClipboardList size={18} /> All Downloads</div>
+            <div className="card-title"><ClipboardList size={18} /> My Downloads ({jobs.length})</div>
           </div>
           <div className="table-container">
             {jobs.length === 0 ? (
@@ -339,7 +231,15 @@ function Downloader({ sessionId }) {
                 <p>Paste a URL above to start downloading</p>
               </div>
             ) : (
-              <table>
+              <table style={{ tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '15%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '22%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '18%' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>URL</th>
@@ -351,7 +251,7 @@ function Downloader({ sessionId }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {jobs.slice((allJobsPage - 1) * ITEMS_PER_PAGE, allJobsPage * ITEMS_PER_PAGE).map(job => {
+                  {jobs.slice((myJobsPage - 1) * ITEMS_PER_PAGE, myJobsPage * ITEMS_PER_PAGE).map(job => {
                     const input = job.inputJson || {};
                     const shortUrl = input.url ? new URL(input.url).hostname : '-';
                     return (
@@ -377,13 +277,11 @@ function Downloader({ sessionId }) {
                           </span>
                         </td>
                         <td>
-                          {job.progress !== null ? (
-                            <div className="progress-wrapper">
-                              <div className="progress-bar">
-                                <div className="progress-fill" style={{ width: `${job.progress}%` }} />
-                              </div>
+                          <div className="progress-wrapper">
+                            <div className="progress-bar">
+                              <div className="progress-fill" style={{ width: `${job.status === 'done' ? 100 : (job.status === 'running' || job.status === 'queued') ? Math.min(job.progress || 0, 90) : (job.progress || 0)}%` }} />
                             </div>
-                          ) : '-'}
+                          </div>
                         </td>
                         <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
                           {formatDate(job.createdAt)}
@@ -431,10 +329,10 @@ function Downloader({ sessionId }) {
           </div>
           {jobs.length > 0 && (
             <Pagination
-              currentPage={allJobsPage}
+              currentPage={myJobsPage}
               totalItems={jobs.length}
               itemsPerPage={ITEMS_PER_PAGE}
-              onPageChange={setAllJobsPage}
+              onPageChange={setMyJobsPage}
             />
           )}
         </div>

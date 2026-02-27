@@ -14,9 +14,7 @@ function Drop({ sessionId }) {
 
   const isExpired = (drop) => drop.deleted === 1 || (drop.expiresAt && new Date(drop.expiresAt) < new Date());
 
-  // Pagination State
   const [myDropsPage, setMyDropsPage] = useState(1);
-  const [allDropsPage, setAllDropsPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
   const fetchDrops = async () => {
@@ -154,94 +152,10 @@ function Drop({ sessionId }) {
           </div>
         </div>
 
-        {/* My Drops */}
-        {myDrops.length > 0 && (
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title"><List size={18} /> My Files ({myDrops.length})</div>
-            </div>
-            <div className="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Token</th>
-                    <th>Filename</th>
-                    <th>Size</th>
-                    <th>Downloads</th>
-                    <th>Created</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {myDrops.slice((myDropsPage - 1) * ITEMS_PER_PAGE, myDropsPage * ITEMS_PER_PAGE).map(drop => {
-                    const expired = isExpired(drop);
-                    return (
-                      <tr key={drop.token}>
-                        <td>
-                          <code style={{
-                            background: 'var(--bg-tertiary)',
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '12px'
-                          }}>
-                            {drop.token}
-                          </code>
-                        </td>
-                        <td>
-                          <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block' }}>
-                            <span style={{ textDecoration: expired ? 'line-through' : 'none', opacity: expired ? 0.7 : 1 }}>
-                              {drop.filename}
-                            </span>
-                          </span>
-                        </td>
-                        <td>{formatBytes(drop.size)}</td>
-                        <td>
-                          <span style={{ fontWeight: '500' }}>{drop.downloads}</span>
-                        </td>
-                        <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
-                          {formatDate(drop.createdAt)}
-                        </td>
-                        <td>
-                          {expired ? (
-                            <span className="status-badge status-expired"><Clock size={12} /> Expired</span>
-                          ) : (
-                            <div style={{ display: 'flex', gap: '5px' }}>
-                              <a
-                                href={getDropUrl(drop.token)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="btn btn-success btn-sm"
-                              >
-                                <Download size={14} /> Download
-                              </a>
-                              <button
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => copyToClipboard(`${getBaseUrl()}/d/${drop.token}`)}
-                              >
-                                <Copy size={14} /> Copy
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <Pagination
-              currentPage={myDropsPage}
-              totalItems={myDrops.length}
-              itemsPerPage={ITEMS_PER_PAGE}
-              onPageChange={setMyDropsPage}
-            />
-          </div>
-        )}
-
-        {/* All Drops */}
+        {/* My Files */}
         <div className="card">
           <div className="card-header">
-            <div className="card-title"><ClipboardList size={18} /> All Files</div>
+            <div className="card-title"><ClipboardList size={18} /> My Files ({drops.length})</div>
           </div>
           <div className="table-container">
             {drops.length === 0 ? (
@@ -263,7 +177,7 @@ function Drop({ sessionId }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {drops.slice((allDropsPage - 1) * ITEMS_PER_PAGE, allDropsPage * ITEMS_PER_PAGE).map(drop => {
+                  {drops.slice((myDropsPage - 1) * ITEMS_PER_PAGE, myDropsPage * ITEMS_PER_PAGE).map(drop => {
                     const expired = isExpired(drop);
                     return (
                       <tr key={drop.token}>
@@ -322,10 +236,10 @@ function Drop({ sessionId }) {
           </div>
           {drops.length > 0 && (
             <Pagination
-              currentPage={allDropsPage}
+              currentPage={myDropsPage}
               totalItems={drops.length}
               itemsPerPage={ITEMS_PER_PAGE}
-              onPageChange={setAllDropsPage}
+              onPageChange={setMyDropsPage}
             />
           )}
         </div>
