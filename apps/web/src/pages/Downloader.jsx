@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api, formatDate, getFileUrl, PRESETS } from '../api';
-import { Download, Film, Clock, List, Settings, CheckCircle, XCircle, Trash2, ClipboardList, Inbox, XSquare, Archive, Link as LinkIcon } from 'lucide-react';
+import { Download, Film, Clock, List, Settings, CheckCircle, XCircle, Trash2, ClipboardList, Inbox, XSquare, Archive, Link as LinkIcon, Youtube, ImageOff } from 'lucide-react';
 import Pagination from '../components/Pagination';
 
 function Downloader({ sessionId }) {
@@ -11,6 +11,7 @@ function Downloader({ sessionId }) {
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const [genericPreview, setGenericPreview] = useState(null);
 
   const [myJobsPage, setMyJobsPage] = useState(1);
@@ -19,6 +20,7 @@ function Downloader({ sessionId }) {
   // Set image loaded back to false when url changes
   useEffect(() => {
     setImgLoaded(false);
+    setImgError(false);
     setGenericPreview(null);
   }, [url]);
 
@@ -41,11 +43,14 @@ function Downloader({ sessionId }) {
     const fetchPreview = async () => {
       try {
         const data = await api.getPreviewUrl(url);
-        if (data.image) {
+        if (data && data.image) {
           setGenericPreview(data.image);
+        } else {
+          setImgError(true);
         }
       } catch (err) {
         console.error('Failed to fetch preview', err);
+        setImgError(true);
       }
     };
 
@@ -178,40 +183,71 @@ function Downloader({ sessionId }) {
 
           {/* Side Preview Area */}
           <div className="downloader-preview">
-            {ytId || genericPreview ? (
+            {ytId || genericPreview || imgError ? (
               <div style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)', backgroundColor: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ position: 'relative', width: '100%', paddingBottom: '56.25%', backgroundColor: 'var(--bg-card)' }}>
-                  {/* Skeleton placeholder that shows until image loads */}
-                  {!imgLoaded && (
-                    <div className="skeleton-box" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+                <div style={{
+                  position: 'relative',
+                  width: '100%',
+                  aspectRatio: '16/9',
+                  backgroundColor: 'var(--bg-card)'
+                }}>
+                  {imgError ? (
+                    <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+                      <ImageOff size={48} strokeWidth={1.5} style={{ marginBottom: '12px', opacity: 0.4 }} />
+                      <span style={{ fontSize: '14px', fontWeight: 500, opacity: 0.7 }}>Preview not available</span>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Skeleton placeholder that shows until image loads */}
+                      {!imgLoaded && (
+                        <div className="skeleton-box" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+                      )}
+                      {/* The actual image */}
+                      <img
+                        src={ytId ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg` : genericPreview}
+                        onLoad={() => setImgLoaded(true)}
+                        onError={(e) => {
+                          if (ytId && e.target.src.includes('maxresdefault.jpg')) {
+                            e.target.src = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
+                          } else {
+                            setImgError(true);
+                            setImgLoaded(true); // Hide skeleton
+                          }
+                        }}
+                        alt={ytId ? "YouTube Video Preview" : "Link Preview"}
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: imgLoaded ? 1 : 0, transition: 'opacity 0.3s ease' }}
+                      />
+                    </>
                   )}
-                  {/* The actual image */}
-                  <img
-                    src={ytId ? `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg` : genericPreview}
-                    onLoad={() => setImgLoaded(true)}
-                    onError={(e) => {
-                      if (ytId && e.target.src.includes('maxresdefault.jpg')) {
-                        e.target.src = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
-                      } else {
-                        setImgLoaded(true); // Hide skeleton and show broken or blank
-                      }
-                    }}
-                    alt={ytId ? "YouTube Video Preview" : "Link Preview"}
-                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: imgLoaded ? 1 : 0, transition: 'opacity 0.3s ease' }}
-                  />
                 </div>
                 <div style={{ padding: '12px', fontSize: '13px', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-card)', borderTop: '1px solid var(--border)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px' }}>
                   {ytId ? (
-                    <><img src="https://www.youtube.com/s/desktop/1054ea61/img/favicon.ico" alt="YT" style={{ width: 16, height: 16 }} /> YouTube Video</>
-                  ) : (
-                    <><LinkIcon size={16} /> Link Preview</>
-                  )}
+                    <><Youtube size={16} color="#ff0000" /> YouTube Video</>
+                  ) : (() => {
+                    try {
+                      if (!url.startsWith('http')) throw new Error();
+                      const hostname = new URL(url).hostname;
+                      return (
+                        <>
+                          <img
+                            src={`https://www.google.com/s2/favicons?domain=${hostname}&sz=32`}
+                            alt="Site Icon"
+                            style={{ width: 16, height: 16, borderRadius: '2px' }}
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
+                          {hostname.replace(/^www\./, '')}
+                        </>
+                      );
+                    } catch {
+                      return <><LinkIcon size={16} /> Link Preview</>;
+                    }
+                  })()}
                 </div>
               </div>
             ) : (
               /* Empty skeleton state when no valid URL is present */
               <div style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
-                <div className="skeleton-box" style={{ width: '100%', paddingBottom: '56.25%' }} />
+                <div className="skeleton-box" style={{ width: '100%', aspectRatio: '16/9' }} />
                 <div className="skeleton-box" style={{ width: '100%', height: '42px', borderTop: '1px solid var(--border)' }} />
               </div>
             )}
