@@ -92,6 +92,105 @@ export const api = {
   // Utils
   getPreviewUrl: (url) => fetchApi(`/utils/preview?url=${encodeURIComponent(url)}`),
 
+  // QR Code
+  generateQR: (text, options = {}) => fetchApi('/qr/generate', {
+    method: 'POST',
+    body: JSON.stringify({ text, ...options }),
+  }),
+  generateQRSvg: (text, options = {}) => fetchApi('/qr/generate-svg', {
+    method: 'POST',
+    body: JSON.stringify({ text, ...options }),
+  }),
+
+  // PDF
+  pdfInfo: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_BASE}/pdf/info`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed' }));
+      throw new Error(error.error || 'Failed');
+    }
+    return response.json();
+  },
+  pdfMerge: async (files) => {
+    const formData = new FormData();
+    files.forEach(f => formData.append('files', f));
+    const response = await fetch(`${API_BASE}/pdf/merge`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Merge failed' }));
+      throw new Error(error.error || 'Merge failed');
+    }
+    return response.blob();
+  },
+  pdfSplit: async (file, pages) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('pages', JSON.stringify(pages));
+    const response = await fetch(`${API_BASE}/pdf/split`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Split failed' }));
+      throw new Error(error.error || 'Split failed');
+    }
+    return response.blob();
+  },
+  pdfRotate: async (file, rotations) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('rotations', JSON.stringify(rotations));
+    const response = await fetch(`${API_BASE}/pdf/rotate`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Rotate failed' }));
+      throw new Error(error.error || 'Rotate failed');
+    }
+    return response.blob();
+  },
+  pdfRemovePages: async (file, pages) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('pages', JSON.stringify(pages));
+    const response = await fetch(`${API_BASE}/pdf/remove-pages`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Remove pages failed' }));
+      throw new Error(error.error || 'Remove pages failed');
+    }
+    return response.blob();
+  },
+  pdfImagesToPdf: async (files) => {
+    const formData = new FormData();
+    files.forEach(f => formData.append('images', f));
+    const response = await fetch(`${API_BASE}/pdf/images-to-pdf`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Conversion failed' }));
+      throw new Error(error.error || 'Conversion failed');
+    }
+    return response.blob();
+  },
+
   // Admin
   getAllJobs: () => fetchApi('/jobs?all=true'),
   getAllDrops: () => fetchApi('/drop/list?all=true'),
@@ -132,7 +231,11 @@ export const PRESETS = [
   { value: 'VIDEO_MP4_BEST', label: 'Video MP4 - Best Quality' },
   { value: 'VIDEO_MP4_720P', label: 'Video MP4 - 720p' },
   { value: 'VIDEO_MP4_DISCORD', label: 'Video MP4 - Discord (<8MB)' },
+  { value: 'AUDIO_FLAC_BEST', label: 'Audio FLAC - Lossless' },
+  { value: 'AUDIO_WAV_BEST', label: 'Audio WAV - Lossless' },
+  { value: 'AUDIO_MP3_320', label: 'Audio MP3 - 320kbps' },
   { value: 'AUDIO_MP3_192', label: 'Audio MP3 - 192kbps' },
+  { value: 'AUDIO_OPUS_BEST', label: 'Audio Opus - Best Quality' },
   { value: 'AUDIO_OPUS_96', label: 'Audio Opus - 96kbps (small size)' },
 ];
 

@@ -61,7 +61,10 @@ body {
   display: flex;
   flex-direction: column;
   position: fixed;
+  top: 0;
+  left: 0;
   height: 100vh;
+  height: 100dvh;
   z-index: 100;
 }
 
@@ -1053,7 +1056,6 @@ td:last-child {
     box-shadow: none;
     height: 100dvh;
     max-height: 100dvh;
-    overflow-y: auto;
   }
 
   .sidebar.open {
