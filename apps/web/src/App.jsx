@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Sun, Moon, Shield, X, Menu, Cookie, FileText } from 'lucide-react';
+import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Sun, Moon, Shield, X, Menu, Cookie, FileText, QrCode, Files } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import Dashboard from './pages/Dashboard';
 import Downloader from './pages/Downloader';
@@ -9,6 +9,8 @@ import Drop from './pages/Drop';
 import DropView from './pages/DropView';
 import AdminPanel from './pages/AdminPanel';
 import PrivacyPolicy from './pages/PrivacyPolicy';
+import QRCode from './pages/QRCode';
+import PDFEditor from './pages/PDFEditor';
 import './index.css';
 
 function App() {
@@ -132,6 +134,14 @@ function App() {
                 <span className="nav-icon"><FolderOpen size={18} /></span>
                 <span>Drop</span>
               </NavLink>
+              <NavLink to="/qr" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
+                <span className="nav-icon"><QrCode size={18} /></span>
+                <span>QR Code</span>
+              </NavLink>
+              <NavLink to="/pdf" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
+                <span className="nav-icon"><Files size={18} /></span>
+                <span>PDF Editor</span>
+              </NavLink>
               {isAdmin && (
                 <>
                   <div className="nav-section" style={{ marginTop: '16px' }}>Admin</div>
@@ -194,6 +204,8 @@ function App() {
               <Route path="/converter" element={<Converter sessionId={sessionId} />} />
               <Route path="/shortener" element={<Shortener sessionId={sessionId} />} />
               <Route path="/drop" element={<Drop sessionId={sessionId} />} />
+              <Route path="/qr" element={<QRCode />} />
+              <Route path="/pdf" element={<PDFEditor />} />
               <Route path="/d/:token" element={<DropView />} />
               {isAdmin && <Route path="/admin" element={<AdminPanel />} />}
               <Route path="/privacy" element={<PrivacyPolicy />} />
