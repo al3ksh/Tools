@@ -265,6 +265,40 @@ router.post('/images-to-pdf', pdfSizeLimit, upload.array('images', 100), async (
   }
 });
 
+// POST /api/pdf/reorder - reorder pages in a PDF
+router.post('/reorder', pdfSizeLimit, upload.single('file'), async (req, res) => {
+  const tempFiles = [];
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    tempFiles.push(req.file.path);
+
+    const order = JSON.parse(req.body.order); // array of 1-based page numbers in desired order
+
+    const pdfBytes = fs.readFileSync(req.file.path);
+    const sourcePdf = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    const totalPages = sourcePdf.getPageCount();
+
+    const zeroOrder = order.filter(p => p >= 1 && p <= totalPages).map(p => p - 1);
+    if (zeroOrder.length === 0) {
+      return res.status(400).json({ error: 'No valid pages in order' });
+    }
+
+    const newPdf = await PDFDocument.create();
+    const copiedPages = await newPdf.copyPages(sourcePdf, zeroOrder);
+    copiedPages.forEach(page => newPdf.addPage(page));
+
+    const newBytes = await newPdf.save();
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="reordered.pdf"');
+    res.send(Buffer.from(newBytes));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  } finally {
+    cleanupFiles(tempFiles);
+  }
+});
+
 // Multer error handling
 router.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {

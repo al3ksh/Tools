@@ -190,6 +190,21 @@ export const api = {
     }
     return response.blob();
   },
+  pdfReorder: async (file, order) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('order', JSON.stringify(order));
+    const response = await fetch(`${API_BASE}/pdf/reorder`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Reorder failed' }));
+      throw new Error(error.error || 'Reorder failed');
+    }
+    return response.blob();
+  },
 
   // Admin
   getAllJobs: () => fetchApi('/jobs?all=true'),
