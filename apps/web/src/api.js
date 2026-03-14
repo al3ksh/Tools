@@ -102,6 +102,42 @@ export const api = {
     body: JSON.stringify({ text, ...options }),
   }),
 
+  // GIF
+  gifInfo: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_BASE}/gif/info`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to read media info' }));
+      throw new Error(error.error || 'Failed to read media info');
+    }
+    return response.json();
+  },
+  gifProcess: async (file, options = {}) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    Object.entries(options).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        formData.append(key, String(value));
+      }
+    });
+
+    const response = await fetch(`${API_BASE}/gif/process`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'GIF processing failed' }));
+      throw new Error(error.error || 'GIF processing failed');
+    }
+    return response.blob();
+  },
+
   // PDF
   pdfInfo: async (file) => {
     const formData = new FormData();

@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Sun, Moon, Shield, X, Menu, Cookie, FileText, QrCode, Files } from 'lucide-react';
+import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Sun, Moon, Shield, X, Menu, Cookie, FileText, QrCode, Files, Sparkles } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import Dashboard from './pages/Dashboard';
 import Downloader from './pages/Downloader';
@@ -11,6 +11,7 @@ import AdminPanel from './pages/AdminPanel';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import QRCode from './pages/QRCode';
 import PDFEditor from './pages/PDFEditor';
+import GifMaker from './pages/GifMaker';
 import './index.css';
 
 function App() {
@@ -142,6 +143,10 @@ function App() {
                 <span className="nav-icon"><Files size={18} /></span>
                 <span>PDF Editor</span>
               </NavLink>
+              <NavLink to="/gif" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
+                <span className="nav-icon"><Sparkles size={18} /></span>
+                <span>GIF Maker</span>
+              </NavLink>
               {isAdmin && (
                 <>
                   <div className="nav-section" style={{ marginTop: '16px' }}>Admin</div>
@@ -206,6 +211,7 @@ function App() {
               <Route path="/drop" element={<Drop sessionId={sessionId} />} />
               <Route path="/qr" element={<QRCode />} />
               <Route path="/pdf" element={<PDFEditor />} />
+              <Route path="/gif" element={<GifMaker />} />
               <Route path="/d/:token" element={<DropView />} />
               {isAdmin && <Route path="/admin" element={<AdminPanel />} />}
               <Route path="/privacy" element={<PrivacyPolicy />} />

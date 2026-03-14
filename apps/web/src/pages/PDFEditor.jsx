@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Files, Upload, Layers, Scissors, RotateCw, Trash2, Image, X, Clock, Download, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Eye, GripVertical, RotateCcw, File as FileIcon } from 'lucide-react';
 import { api, formatBytes } from '../api';
 import * as pdfjsLib from 'pdfjs-dist';
+import FileUploader from '../components/FileUploader';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
 
@@ -327,6 +328,53 @@ export default function PDFEditor() {
     setMergeInfos(ni);
   };
 
+  const handleEditSelect = (selected) => {
+    if (!selected) {
+      setPdfFile(null);
+      setPdfDoc(null);
+      setPageCount(0);
+      setPageOrder([]);
+      setRotations({});
+      setDeletedPages(new Set());
+      setSelectedPages(new Set());
+      return;
+    }
+    loadPdf(selected);
+  };
+
+  const handleMergeSelect = (selected) => {
+    if (!selected || selected.length === 0) {
+      setMergeFiles([]);
+      setMergeInfos([]);
+      return;
+    }
+    addMergeFiles(selected);
+  };
+
+  const handleSplitSelect = async (selected) => {
+    if (!selected) {
+      setSplitFile(null);
+      setSplitPageCount(0);
+      setSplitInput('');
+      return;
+    }
+    setSplitFile(selected);
+    try {
+      const info = await api.pdfInfo(selected);
+      setSplitPageCount(info.pageCount);
+    } catch {
+      setSplitPageCount(0);
+    }
+  };
+
+  const handleImagesSelect = (selected) => {
+    if (!selected || selected.length === 0) {
+      setImageFiles([]);
+      return;
+    }
+    setImageFiles(selected);
+  };
+
   // ===== GENERAL =====
   const handleFileDrop = (e) => {
     e.preventDefault();
@@ -422,26 +470,15 @@ export default function PDFEditor() {
             {!pdfDoc ? (
               <div className="card" style={{ margin: 0 }}>
                 <div className="card-body">
-                  <div
-                    onDrop={handleFileDrop}
-                    onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-                    onDragLeave={() => setDragActive(false)}
-                    onClick={() => fileInputRef.current?.click()}
-                    style={{
-                      border: `2px dashed ${dragActive ? 'var(--accent)' : 'var(--border)'}`,
-                      borderRadius: '12px', padding: '60px 20px', textAlign: 'center',
-                      cursor: 'pointer', transition: 'all 0.2s',
-                      background: dragActive ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
-                    }}
-                  >
-                    <Upload size={48} style={{ opacity: 0.2, marginBottom: '12px' }} />
-                    <div style={{ fontSize: '15px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                      Drop a PDF here or click to open
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', opacity: 0.6 }}>
-                      View pages, drag to reorder, rotate & remove — then download
-                    </div>
-                    <input ref={fileInputRef} type="file" accept="application/pdf" style={{ display: 'none' }} onChange={handleFileInput} />
+                  <FileUploader
+                    onFileSelect={handleEditSelect}
+                    maxSizeMB={100}
+                    accept="application/pdf"
+                    selectedFile={pdfFile}
+                    noLimit={!!localStorage.getItem('adminToken')}
+                  />
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', opacity: 0.6, marginTop: '-6px' }}>
+                    View pages, drag to reorder, rotate and remove, then download.
                   </div>
                 </div>
               </div>
@@ -541,22 +578,14 @@ export default function PDFEditor() {
               <div className="card-title"><Layers size={18} /> Merge PDFs</div>
             </div>
             <div className="card-body">
-              <div
-                onDrop={handleFileDrop}
-                onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-                onDragLeave={() => setDragActive(false)}
-                onClick={() => fileInputRef.current?.click()}
-                style={{
-                  border: `2px dashed ${dragActive ? 'var(--accent)' : 'var(--border)'}`,
-                  borderRadius: '12px', padding: '30px 20px', textAlign: 'center',
-                  cursor: 'pointer', transition: 'all 0.2s',
-                  background: dragActive ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
-                }}
-              >
-                <Upload size={36} style={{ opacity: 0.25, marginBottom: '8px' }} />
-                <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>Drop PDF files here (2+ files)</div>
-                <input ref={fileInputRef} type="file" multiple accept="application/pdf" style={{ display: 'none' }} onChange={handleFileInput} />
-              </div>
+              <FileUploader
+                onFileSelect={handleMergeSelect}
+                maxSizeMB={100}
+                accept="application/pdf"
+                selectedFile={mergeFiles}
+                multiple={true}
+                noLimit={!!localStorage.getItem('adminToken')}
+              />
               {mergeFiles.length > 0 && (
                 <div style={{ marginTop: '16px' }}>
                   {mergeFiles.map((f, idx) => (
@@ -597,22 +626,13 @@ export default function PDFEditor() {
             </div>
             <div className="card-body">
               {!splitFile ? (
-                <div
-                  onDrop={handleFileDrop}
-                  onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-                  onDragLeave={() => setDragActive(false)}
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    border: `2px dashed ${dragActive ? 'var(--accent)' : 'var(--border)'}`,
-                    borderRadius: '12px', padding: '30px 20px', textAlign: 'center',
-                    cursor: 'pointer', transition: 'all 0.2s',
-                    background: dragActive ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
-                  }}
-                >
-                  <Upload size={36} style={{ opacity: 0.25, marginBottom: '8px' }} />
-                  <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>Drop a PDF file here</div>
-                  <input ref={fileInputRef} type="file" accept="application/pdf" style={{ display: 'none' }} onChange={handleFileInput} />
-                </div>
+                <FileUploader
+                  onFileSelect={handleSplitSelect}
+                  maxSizeMB={100}
+                  accept="application/pdf"
+                  selectedFile={splitFile}
+                  noLimit={!!localStorage.getItem('adminToken')}
+                />
               ) : (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
@@ -644,22 +664,14 @@ export default function PDFEditor() {
               <div className="card-title"><Image size={18} /> Images → PDF</div>
             </div>
             <div className="card-body">
-              <div
-                onDrop={handleFileDrop}
-                onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-                onDragLeave={() => setDragActive(false)}
-                onClick={() => fileInputRef.current?.click()}
-                style={{
-                  border: `2px dashed ${dragActive ? 'var(--accent)' : 'var(--border)'}`,
-                  borderRadius: '12px', padding: '30px 20px', textAlign: 'center',
-                  cursor: 'pointer', transition: 'all 0.2s',
-                  background: dragActive ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
-                }}
-              >
-                <Upload size={36} style={{ opacity: 0.25, marginBottom: '8px' }} />
-                <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>Drop images here (JPG, PNG)</div>
-                <input ref={fileInputRef} type="file" multiple accept="image/jpeg,image/png" style={{ display: 'none' }} onChange={handleFileInput} />
-              </div>
+              <FileUploader
+                onFileSelect={handleImagesSelect}
+                maxSizeMB={50}
+                accept="image/jpeg,image/png"
+                selectedFile={imageFiles}
+                multiple={true}
+                noLimit={!!localStorage.getItem('adminToken')}
+              />
               {imageFiles.length > 0 && (
                 <div style={{ marginTop: '16px' }}>
                   {imageFiles.map((f, idx) => (

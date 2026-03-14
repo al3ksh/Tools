@@ -35,6 +35,7 @@ const utilsRoutes = require('../routes/utils');
 const authRoutes = require('../routes/auth');
 const qrRoutes = require('../routes/qr');
 const pdfRoutes = require('../routes/pdf');
+const gifRoutes = require('../routes/gif');
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -51,6 +52,7 @@ app.use('/api/storage', storageRoutes);
 app.use('/api/utils', utilsRoutes);
 app.use('/api/qr', qrRoutes);
 app.use('/api/pdf', pdfRoutes);
+app.use('/api/gif', gifRoutes);
 
 // Redirect routes (shortener and drop)
 app.get('/s/:slug', redirectHandler);
