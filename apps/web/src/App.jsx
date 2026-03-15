@@ -15,15 +15,9 @@ import GifMaker from './pages/GifMaker';
 import './index.css';
 
 function App() {
-  const [isAdmin, setIsAdmin] = useState(() => {
-    return !!localStorage.getItem('adminToken');
-  });
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [sessionId] = useState(() => {
-    // Admin always uses a shared fixed sessionId
-    if (localStorage.getItem('adminToken')) {
-      return 'admin';
-    }
     // Guest gets a unique persistent session
     const stored = localStorage.getItem('tools_session');
     if (stored) {
@@ -52,9 +46,14 @@ function App() {
 
   const handleAdminToggle = () => {
     if (isAdmin) {
-      localStorage.removeItem('adminToken');
-      setIsAdmin(false);
-      window.location.reload();
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      }).finally(() => {
+        localStorage.removeItem('adminToken');
+        setIsAdmin(false);
+        window.location.reload();
+      });
     } else {
       setLoginError('');
       setPasswordInput('');
@@ -70,11 +69,12 @@ function App() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ password: passwordInput }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        localStorage.setItem('adminToken', data.token);
+        localStorage.setItem('adminToken', 'ui-admin');
         setIsAdmin(true);
         setShowLoginModal(false);
         window.location.reload();
@@ -88,6 +88,34 @@ function App() {
       setLoginLoading(false);
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const verifyAdmin = async () => {
+      try {
+        const res = await fetch('/api/auth/verify', {
+          method: 'GET',
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (!cancelled) {
+          const next = !!data?.isAdmin;
+          setIsAdmin(next);
+          if (next) localStorage.setItem('adminToken', 'ui-admin');
+          else localStorage.removeItem('adminToken');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setIsAdmin(false);
+          localStorage.removeItem('adminToken');
+        }
+      }
+    };
+
+    verifyAdmin();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (isDarkMode) {

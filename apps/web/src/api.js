@@ -1,13 +1,13 @@
 const API_BASE = '/api';
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('adminToken');
-  return token ? { 'X-Admin-Token': token } : {};
+  return {};
 };
 
 async function fetchApi(endpoint, options = {}) {
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...getAuthHeaders(),
@@ -43,6 +43,7 @@ export const api = {
     if (sessionId) formData.append('sessionId', sessionId);
     const response = await fetch(`${API_BASE}/upload/upload`, {
       method: 'POST',
+      credentials: 'include',
       headers: getAuthHeaders(),
       body: formData,
     });
@@ -73,6 +74,7 @@ export const api = {
     if (sessionId) formData.append('sessionId', sessionId);
     const response = await fetch(`${API_BASE}/drop/upload`, {
       method: 'POST',
+      credentials: 'include',
       headers: getAuthHeaders(),
       body: formData,
     });
@@ -108,6 +110,7 @@ export const api = {
     formData.append('file', file);
     const response = await fetch(`${API_BASE}/gif/info`, {
       method: 'POST',
+      credentials: 'include',
       headers: getAuthHeaders(),
       body: formData,
     });
@@ -128,6 +131,7 @@ export const api = {
 
     const response = await fetch(`${API_BASE}/gif/process`, {
       method: 'POST',
+      credentials: 'include',
       headers: getAuthHeaders(),
       body: formData,
     });
@@ -144,6 +148,7 @@ export const api = {
     formData.append('file', file);
     const response = await fetch(`${API_BASE}/pdf/info`, {
       method: 'POST',
+      credentials: 'include',
       headers: getAuthHeaders(),
       body: formData,
     });
@@ -158,6 +163,7 @@ export const api = {
     files.forEach(f => formData.append('files', f));
     const response = await fetch(`${API_BASE}/pdf/merge`, {
       method: 'POST',
+      credentials: 'include',
       headers: getAuthHeaders(),
       body: formData,
     });
@@ -173,6 +179,7 @@ export const api = {
     formData.append('pages', JSON.stringify(pages));
     const response = await fetch(`${API_BASE}/pdf/split`, {
       method: 'POST',
+      credentials: 'include',
       headers: getAuthHeaders(),
       body: formData,
     });
@@ -188,6 +195,7 @@ export const api = {
     formData.append('rotations', JSON.stringify(rotations));
     const response = await fetch(`${API_BASE}/pdf/rotate`, {
       method: 'POST',
+      credentials: 'include',
       headers: getAuthHeaders(),
       body: formData,
     });
@@ -203,6 +211,7 @@ export const api = {
     formData.append('pages', JSON.stringify(pages));
     const response = await fetch(`${API_BASE}/pdf/remove-pages`, {
       method: 'POST',
+      credentials: 'include',
       headers: getAuthHeaders(),
       body: formData,
     });
@@ -217,6 +226,7 @@ export const api = {
     files.forEach(f => formData.append('images', f));
     const response = await fetch(`${API_BASE}/pdf/images-to-pdf`, {
       method: 'POST',
+      credentials: 'include',
       headers: getAuthHeaders(),
       body: formData,
     });
@@ -232,6 +242,7 @@ export const api = {
     formData.append('order', JSON.stringify(order));
     const response = await fetch(`${API_BASE}/pdf/reorder`, {
       method: 'POST',
+      credentials: 'include',
       headers: getAuthHeaders(),
       body: formData,
     });

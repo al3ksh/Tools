@@ -1,20 +1,80 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
 const { DATA_DIR } = require('../db/database');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.ADMIN_PASSWORD;
+
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+function getAdminToken(req) {
+  const headerToken = req.headers['x-admin-token'];
+  if (headerToken) return headerToken;
+  return req.cookies?.admin_token || null;
+}
 
 // Middleware
-app.use(cors());
-app.use(express.json());
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      mediaSrc: ["'self'", 'blob:'],
+      connectSrc: ["'self'", 'blob:'],
+      fontSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+}));
+app.use(cookieParser());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+}));
+app.use(express.json({ limit: '1mb' }));
+app.use('/api', rateLimit({
+  windowMs: 60 * 1000,
+  max: 180,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again in a minute.' },
+}));
 
 // Admin auth middleware
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'tooladmin1234';
 app.use((req, res, next) => {
-  const token = req.headers['x-admin-token'];
-  req.isAdmin = token === ADMIN_PASSWORD;
+  req.isAdmin = false;
+
+  const token = getAdminToken(req);
+  if (token && ADMIN_JWT_SECRET) {
+    try {
+      const payload = jwt.verify(token, ADMIN_JWT_SECRET);
+      req.isAdmin = payload?.role === 'admin';
+    } catch (err) {
+      req.isAdmin = false;
+    }
+  }
+
   // Force a shared sessionId for admin across all devices
   if (req.isAdmin) {
     if (req.body) req.body.sessionId = 'admin';
@@ -79,4 +139,7 @@ app.get('*', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`API server running on port ${PORT}`);
   console.log(`Data directory: ${DATA_DIR}`);
+  if (!process.env.ADMIN_JWT_SECRET && process.env.ADMIN_PASSWORD) {
+    console.warn('Warning: ADMIN_JWT_SECRET is not set. Falling back to ADMIN_PASSWORD for JWT signing.');
+  }
 });
