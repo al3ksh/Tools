@@ -110,6 +110,11 @@ function runFfprobe(inputPath) {
   });
 }
 
+function isStaticImage(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  return ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.tif'].includes(ext);
+}
+
 function buildFilterChain({ fps, width, speed, reverse }) {
   const filters = [];
 
@@ -175,6 +180,7 @@ router.post('/process', upload.single('file'), async (req, res) => {
     const loop = clampNumber(req.body.loop, 0, 10, 0);
     const reverse = String(req.body.reverse) === 'true';
     const preview = String(req.body.preview) === 'true';
+    const staticImage = isStaticImage(req.file.path);
 
     const finalFps = preview ? Math.min(fps, 12) : fps;
     const finalWidth = preview ? Math.min(width, 360) : width;
@@ -185,33 +191,37 @@ router.post('/process', upload.single('file'), async (req, res) => {
     const outputPath = path.join(gifTempDir, `${uuidv4()}.gif`);
     tempFiles.push(outputPath);
 
-    const chain = buildFilterChain({
-      fps: finalFps,
-      width: finalWidth,
-      speed,
-      reverse,
-    });
+    const scaleFilter = `scale=${finalWidth}:-1:flags=lanczos`;
+    const paletteFilter = `${scaleFilter},split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=bayer:bayer_scale=5`;
 
-    const ffmpegArgs = ['-y'];
+    let ffmpegArgs = ['-y'];
 
-    if (!Number.isNaN(startSec) && startSec !== null && startSec >= 0) {
-      ffmpegArgs.push('-ss', String(startSec));
+    if (staticImage) {
+      ffmpegArgs.push('-i', req.file.path);
+      ffmpegArgs.push('-vf', paletteFilter);
+      ffmpegArgs.push('-loop', '0');
+      ffmpegArgs.push('-an', outputPath);
+    } else {
+      const chain = buildFilterChain({
+        fps: finalFps,
+        width: finalWidth,
+        speed,
+        reverse,
+      });
+
+      if (!Number.isNaN(startSec) && startSec !== null && startSec >= 0) {
+        ffmpegArgs.push('-ss', String(startSec));
+      }
+
+      if (!Number.isNaN(endSec) && endSec !== null && endSec > 0) {
+        ffmpegArgs.push('-to', String(endSec));
+      }
+
+      ffmpegArgs.push('-i', req.file.path);
+      ffmpegArgs.push('-filter_complex', `[0:v]${chain},split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=bayer:bayer_scale=5`);
+      ffmpegArgs.push('-loop', String(loop));
+      ffmpegArgs.push('-an', outputPath);
     }
-
-    if (!Number.isNaN(endSec) && endSec !== null && endSec > 0) {
-      ffmpegArgs.push('-to', String(endSec));
-    }
-
-    ffmpegArgs.push('-i', req.file.path);
-
-    ffmpegArgs.push(
-      '-filter_complex',
-      `[0:v]${chain},split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=bayer:bayer_scale=5`,
-      '-loop',
-      String(loop),
-      '-an',
-      outputPath,
-    );
 
     await runProcess('ffmpeg', ffmpegArgs);
 

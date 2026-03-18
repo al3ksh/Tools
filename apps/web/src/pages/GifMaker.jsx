@@ -46,6 +46,7 @@ export default function GifMaker() {
 
   const sourceUrl = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
   const isGifInput = file ? file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif') : false;
+  const isStaticImage = file ? file.type.startsWith('image/') && !isGifInput : false;
   const duration = meta?.duration && Number.isFinite(meta.duration) ? Number(meta.duration) : 0;
 
   const parsedStart = clamp(startSec, 0, duration || 99999, 0);
@@ -122,7 +123,9 @@ export default function GifMaker() {
     try {
       const info = await api.gifInfo(nextFile);
       setMeta(info);
-      if (info?.duration && Number.isFinite(info.duration)) {
+      if (nextFile.type.startsWith('image/') && !nextFile.name.toLowerCase().endsWith('.gif')) {
+        setWidth(Math.min(info.width || 480, 1080));
+      } else if (info?.duration && Number.isFinite(info.duration)) {
         setStartSec('0');
         setEndSec(String(Math.min(Math.floor(info.duration), 15)));
         setCurrentTime(0);
@@ -434,7 +437,7 @@ export default function GifMaker() {
       preview,
     };
 
-    if (!isGifInput) {
+    if (!isGifInput && !isStaticImage) {
       const start = Number(safeStart);
       const end = Number(safeEnd);
       if (Number.isFinite(start) && start >= 0) options.startSec = start;
@@ -519,12 +522,12 @@ export default function GifMaker() {
             <FileUploader
               onFileSelect={handleFileChange}
               maxSizeMB={200}
-              accept="video/*,image/gif"
+              accept="video/*,image/*"
               selectedFile={file}
               noLimit={!!localStorage.getItem('adminToken')}
             />
             <div className="form-help" style={{ marginTop: '-6px' }}>
-              Supported: MP4, WEBM, MOV, MKV and GIF
+              Supported: MP4, WEBM, MOV, MKV, GIF and images (PNG, JPG, WEBP)
             </div>
 
             {file && (
@@ -550,7 +553,7 @@ export default function GifMaker() {
 
             {sourceUrl && (
               <div style={{ marginTop: '12px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)' }}>
-                {!isGifInput ? (
+                {!isGifInput && !isStaticImage ? (
                   <video
                     ref={videoRef}
                     src={sourceUrl}
@@ -567,7 +570,7 @@ export default function GifMaker() {
                     style={{ width: '100%', display: 'block', background: '#000', maxHeight: '360px', objectFit: 'contain' }}
                   />
                 ) : (
-                  <img src={sourceUrl} alt="Source GIF" style={{ width: '100%', display: 'block' }} />
+                  <img src={sourceUrl} alt="Source GIF" style={{ width: '100%', maxHeight: '360px', objectFit: 'contain', display: 'block' }} />
                 )}
               </div>
             )}
@@ -643,7 +646,17 @@ export default function GifMaker() {
                             <img src={frame.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'brightness(0.82)', pointerEvents: 'none' }} draggable={false} />
                           ) : (
                             <div style={{ width: '100%', height: '100%', background: 'linear-gradient(120deg, rgba(255,255,255,0.03), rgba(255,255,255,0.08), rgba(255,255,255,0.03))' }} />
-                          )}
+            )}
+
+            {isStaticImage && (
+            <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', marginBottom: '12px' }}>
+              <div className="form-group">
+                <label className="form-label">Output Width</label>
+                <input className="form-input" type="number" min="120" max="1080" step="2" value={width} onChange={(e) => setWidth(e.target.value)} />
+              </div>
+            </div>
+            )}
+
                         </div>
                       ))}
                     </div>
@@ -818,7 +831,7 @@ export default function GifMaker() {
                 </div>
               )}
 
-            {!isGifInput && (
+            {!isGifInput && !isStaticImage && (
               <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div className="form-group">
                   <label className="form-label">Start (sec)</label>
@@ -831,12 +844,15 @@ export default function GifMaker() {
               </div>
             )}
 
+            {!isStaticImage && (
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
               <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setFps(12); setWidth(360); }}>Small</button>
               <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setFps(15); setWidth(480); }}>Balanced</button>
               <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setFps(20); setWidth(640); }}>High</button>
             </div>
+            )}
 
+            {!isStaticImage && (
             <div className="form-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(120px, 1fr))', gap: '10px' }}>
               <div className="form-group">
                 <label className="form-label">FPS</label>
@@ -855,7 +871,9 @@ export default function GifMaker() {
                 <input className="form-input" type="number" min="0" max="10" value={loop} onChange={(e) => setLoop(e.target.value)} />
               </div>
             </div>
+            )}
 
+            {!isStaticImage && (
             <div style={{
               border: '1px solid var(--border)', borderRadius: '10px', padding: '10px', marginBottom: '12px',
               background: 'var(--bg)', display: 'grid', gap: '8px'
@@ -870,6 +888,7 @@ export default function GifMaker() {
                 Reverse animation
               </label>
             </div>
+            )}
 
             {error && (
               <div style={{
@@ -901,7 +920,7 @@ export default function GifMaker() {
             </div>
             <div className="card-body" style={{ minHeight: '220px' }}>
               {previewUrl ? (
-                <img src={previewUrl} alt="GIF preview" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)', display: 'block' }} />
+                <img src={previewUrl} alt="GIF preview" style={{ width: '100%', maxWidth: '480px', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px', border: '1px solid var(--border)', display: 'block' }} />
               ) : (
                 <div style={{ color: 'var(--text-secondary)' }}>Generate a preview to see quick output.</div>
               )}
@@ -915,7 +934,7 @@ export default function GifMaker() {
             <div className="card-body" style={{ minHeight: '220px' }}>
               {resultUrl ? (
                 <>
-                  <img src={resultUrl} alt="GIF result" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--border)', display: 'block' }} />
+                  <img src={resultUrl} alt="GIF result" style={{ width: '100%', maxWidth: '480px', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px', border: '1px solid var(--border)', display: 'block' }} />
                   <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                     <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
                       {resultSize ? formatBytes(resultSize) : ''}
