@@ -97,6 +97,14 @@ const statements = {
     SELECT * FROM jobs WHERE id = ?
   `),
 
+  countActiveJobsBySession: db.prepare(`
+    SELECT COUNT(*) as count FROM jobs WHERE sessionId = ? AND status IN ('queued', 'running') AND deleted = 0
+  `),
+
+  countActiveJobsTotal: db.prepare(`
+    SELECT COUNT(*) as count FROM jobs WHERE status IN ('queued', 'running') AND deleted = 0
+  `),
+
   getRecentJobs: db.prepare(`
     SELECT * FROM jobs ORDER BY createdAt DESC LIMIT ?
   `),

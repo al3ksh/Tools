@@ -1,9 +1,18 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const QRCode = require('qrcode');
 
+const qrRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many QR code requests. Please try again in a minute.' },
+});
+
 // POST /api/qr/generate - generate QR code as PNG data URL
-router.post('/generate', async (req, res) => {
+router.post('/generate', qrRateLimit, async (req, res) => {
   try {
     const { text, size = 300, darkColor = '#000000', lightColor = '#ffffff', errorCorrection = 'M' } = req.body;
 
@@ -36,7 +45,7 @@ router.post('/generate', async (req, res) => {
 
     res.json({ dataUrl });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -72,7 +81,7 @@ router.post('/generate-svg', async (req, res) => {
 
     res.json({ svg });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

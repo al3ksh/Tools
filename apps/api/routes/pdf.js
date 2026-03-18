@@ -41,15 +41,40 @@ const upload = multer({
   }
 });
 
+const uploadGuest = multer({
+  storage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: upload.fileFilter,
+});
+
 // Size limit for guests
 const pdfSizeLimit = (req, res, next) => {
   if (req.isAdmin) return next();
   const MAX_GUEST = 100 * 1024 * 1024;
   if (req.headers['content-length'] && parseInt(req.headers['content-length']) > MAX_GUEST) {
-    return res.status(413).json({ error: 'File too large. Guest limit is 100MB.' });
+    return res.status(413).json({ error: `File too large. Guest limit is 100MB.` });
   }
   next();
 };
+
+function getUploader(method, field, maxCount) {
+  return (req, res, next) => {
+    const uploader = req.isAdmin ? upload : uploadGuest;
+    const handler = maxCount ? uploader.array(field, maxCount) : uploader.single(field);
+    handler(req, res, (err) => {
+      if (err) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(413).json({ error: 'File too large. Guest limit is 100MB.' });
+        }
+        if (err.message && err.message.includes('Only')) {
+          return res.status(400).json({ error: err.message });
+        }
+        return res.status(400).json({ error: 'Upload failed' });
+      }
+      next();
+    });
+  };
+}
 
 function cleanupFiles(files) {
   for (const f of files) {
@@ -58,7 +83,7 @@ function cleanupFiles(files) {
 }
 
 // POST /api/pdf/info - get PDF page count and metadata
-router.post('/info', pdfSizeLimit, upload.single('file'), async (req, res) => {
+router.post('/info', pdfSizeLimit, getUploader("single", "file"), async (req, res) => {
   const tempFiles = [];
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -73,14 +98,14 @@ router.post('/info', pdfSizeLimit, upload.single('file'), async (req, res) => {
       author: pdfDoc.getAuthor() || null,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   } finally {
     cleanupFiles(tempFiles);
   }
 });
 
 // POST /api/pdf/merge - merge multiple PDFs into one
-router.post('/merge', pdfSizeLimit, upload.array('files', 50), async (req, res) => {
+router.post('/merge', pdfSizeLimit, getUploader("array", "files", 50), async (req, res) => {
   const tempFiles = [];
   try {
     if (!req.files || req.files.length < 2) {
@@ -104,14 +129,14 @@ router.post('/merge', pdfSizeLimit, upload.array('files', 50), async (req, res) 
     res.setHeader('Content-Disposition', 'attachment; filename="merged.pdf"');
     res.send(Buffer.from(mergedBytes));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   } finally {
     cleanupFiles(tempFiles);
   }
 });
 
 // POST /api/pdf/split - extract specific pages from a PDF
-router.post('/split', pdfSizeLimit, upload.single('file'), async (req, res) => {
+router.post('/split', pdfSizeLimit, getUploader("single", "file"), async (req, res) => {
   const tempFiles = [];
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -141,14 +166,14 @@ router.post('/split', pdfSizeLimit, upload.single('file'), async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="extracted.pdf"');
     res.send(Buffer.from(newBytes));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   } finally {
     cleanupFiles(tempFiles);
   }
 });
 
 // POST /api/pdf/rotate - rotate specific pages
-router.post('/rotate', pdfSizeLimit, upload.single('file'), async (req, res) => {
+router.post('/rotate', pdfSizeLimit, getUploader("single", "file"), async (req, res) => {
   const tempFiles = [];
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -174,14 +199,14 @@ router.post('/rotate', pdfSizeLimit, upload.single('file'), async (req, res) => 
     res.setHeader('Content-Disposition', 'attachment; filename="rotated.pdf"');
     res.send(Buffer.from(newBytes));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   } finally {
     cleanupFiles(tempFiles);
   }
 });
 
 // POST /api/pdf/remove-pages - remove specific pages from a PDF
-router.post('/remove-pages', pdfSizeLimit, upload.single('file'), async (req, res) => {
+router.post('/remove-pages', pdfSizeLimit, getUploader("single", "file"), async (req, res) => {
   const tempFiles = [];
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -213,14 +238,14 @@ router.post('/remove-pages', pdfSizeLimit, upload.single('file'), async (req, re
     res.setHeader('Content-Disposition', 'attachment; filename="modified.pdf"');
     res.send(Buffer.from(newBytes));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   } finally {
     cleanupFiles(tempFiles);
   }
 });
 
 // POST /api/pdf/images-to-pdf - convert images to a PDF
-router.post('/images-to-pdf', pdfSizeLimit, upload.array('images', 100), async (req, res) => {
+router.post('/images-to-pdf', pdfSizeLimit, getUploader("array", "images", 100), async (req, res) => {
   const tempFiles = [];
   try {
     if (!req.files || req.files.length === 0) {
@@ -259,14 +284,14 @@ router.post('/images-to-pdf', pdfSizeLimit, upload.array('images', 100), async (
     res.setHeader('Content-Disposition', 'attachment; filename="images.pdf"');
     res.send(Buffer.from(pdfBytes));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   } finally {
     cleanupFiles(tempFiles);
   }
 });
 
 // POST /api/pdf/reorder - reorder pages in a PDF
-router.post('/reorder', pdfSizeLimit, upload.single('file'), async (req, res) => {
+router.post('/reorder', pdfSizeLimit, getUploader("single", "file"), async (req, res) => {
   const tempFiles = [];
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -293,7 +318,7 @@ router.post('/reorder', pdfSizeLimit, upload.single('file'), async (req, res) =>
     res.setHeader('Content-Disposition', 'attachment; filename="reordered.pdf"');
     res.send(Buffer.from(newBytes));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   } finally {
     cleanupFiles(tempFiles);
   }

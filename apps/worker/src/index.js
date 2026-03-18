@@ -61,11 +61,30 @@ function finishWithError(jobId, error) {
   finishJob.run('failed', new Date().toISOString(), null, error, null, jobId);
 }
 
+function checkDiskSpace(requiredMB = 500) {
+  try {
+    const stat = fs.statfsSync(DATA_DIR);
+    const availableBytes = stat.bavail * stat.bsize;
+    const availableMB = availableBytes / (1024 * 1024);
+    if (availableMB < requiredMB) {
+      return false;
+    }
+    return true;
+  } catch (e) {
+    return true;
+  }
+}
+
 // Download job processor
 async function processDownloadJob(job) {
   const input = JSON.parse(job.inputJson);
   const { url, preset, presetConfig, isAdmin } = input;
   const jobId = job.id;
+
+  if (!checkDiskSpace(500)) {
+    finishWithError(jobId, 'Insufficient disk space on server');
+    return;
+  }
 
   const outputDir = safePath(DATA_DIR, 'downloads');
   fs.mkdirSync(path.join(outputDir, jobId), { recursive: true });
@@ -75,6 +94,8 @@ async function processDownloadJob(job) {
     '--no-playlist',
     '--no-warnings',
     '--newline',
+    '--force-ipv4',
+    '--socket-timeout', '15',
     '-o', outputTemplate,
   ];
 
@@ -148,7 +169,7 @@ async function processDownloadJob(job) {
           finishWithSuccess(jobId, { files }, isAdmin);
           resolve();
         } catch (e) {
-          finishWithError(jobId, `Failed to post-process output: ${e.message}`);
+          finishWithError(jobId, 'Failed to process output');
           reject(e);
         }
       } else {
@@ -172,6 +193,11 @@ async function processConvertJob(job) {
   const { source, options, isAdmin } = input;
   const jobId = job.id;
 
+  if (!checkDiskSpace(200)) {
+    finishWithError(jobId, 'Insufficient disk space on server');
+    return;
+  }
+
   let inputPath;
   if (source.type === 'upload') {
     inputPath = safePath(DATA_DIR, source.path);
@@ -182,7 +208,7 @@ async function processConvertJob(job) {
   }
 
   if (!fs.existsSync(inputPath)) {
-    throw new Error(`Input file not found: ${inputPath}`);
+    throw new Error('Input file not found');
   }
 
   const outputDir = safePath(DATA_DIR, path.join('converted', String(jobId)));
@@ -274,9 +300,15 @@ async function processConvertJob(job) {
               size: stat.size
             }]
           }, isAdmin);
+          if (input.source && input.source.type === 'upload' && input.source.path) {
+            try {
+              const uploadPath = safePath(DATA_DIR, input.source.path);
+              if (fs.existsSync(uploadPath)) fs.unlinkSync(uploadPath);
+            } catch (e) { console.error('Failed to cleanup upload:', e.message); }
+          }
           resolve();
         } catch (e) {
-          finishWithError(jobId, `Failed to post-process output: ${e.message}`);
+          finishWithError(jobId, 'Failed to process output');
           reject(e);
         }
       } else {
@@ -307,6 +339,7 @@ async function processJob(job) {
 
 // Main polling loop
 async function pollAndProcess() {
+  if (shuttingDown) return;
   try {
     const job = claimNextJob.get(new Date().toISOString());
 
@@ -388,6 +421,45 @@ async function cleanupExpiredJobs() {
     if (staleJobs.length > 0) {
       console.log(`Cleaned up ${staleJobs.length} stale failed jobs`);
     }
+
+    // Cleanup temp files older than 1 hour
+    const tempDirs = [
+      path.join(DATA_DIR, 'uploads', 'gif-temp'),
+      path.join(DATA_DIR, 'uploads', 'pdf-temp'),
+    ];
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    for (const tempDir of tempDirs) {
+      if (!fs.existsSync(tempDir)) continue;
+      for (const file of fs.readdirSync(tempDir)) {
+        const filePath = path.join(tempDir, file);
+        try {
+          const stat = fs.statSync(filePath);
+          if (stat.mtimeMs < oneHourAgo) {
+            fs.unlinkSync(filePath);
+          }
+        } catch (e) { }
+      }
+    }
+
+    // Cleanup orphaned uploads older than 24 hours
+    const uploadsDir = path.join(DATA_DIR, 'uploads');
+    if (fs.existsSync(uploadsDir)) {
+      const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+      for (const dateDir of fs.readdirSync(uploadsDir)) {
+        if (dateDir === 'gif-temp' || dateDir === 'pdf-temp') continue;
+        const fullDir = path.join(uploadsDir, dateDir);
+        if (!fs.statSync(fullDir).isDirectory()) continue;
+        try {
+          for (const file of fs.readdirSync(fullDir)) {
+            const filePath = path.join(fullDir, file);
+            const stat = fs.statSync(filePath);
+            if (stat.mtimeMs < oneDayAgo) {
+              fs.unlinkSync(filePath);
+            }
+          }
+        } catch (e) { }
+      }
+    }
   } catch (err) {
     console.error('Cleanup error:', err);
   }
@@ -414,6 +486,29 @@ function pollAndCancel() {
   } catch (err) {
     console.error('Cancellation polling error:', err);
   }
+}
+
+let shuttingDown = false;
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+function gracefulShutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log('Received shutdown signal, finishing current job...');
+
+  for (const [jobId, proc] of activeProcesses) {
+    try {
+      proc.kill('SIGKILL');
+      finishWithError(jobId, 'Worker shutting down');
+    } catch (e) { }
+  }
+
+  setTimeout(() => {
+    console.log('Worker shut down complete');
+    process.exit(0);
+  }, 5000);
 }
 
 setInterval(pollAndProcess, POLL_INTERVAL);

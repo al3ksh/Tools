@@ -44,5 +44,7 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, createdAt);
 CREATE INDEX IF NOT EXISTS idx_jobs_expires ON jobs(expiresAt, status);
 CREATE INDEX IF NOT EXISTS idx_jobs_session ON jobs(sessionId);
 CREATE INDEX IF NOT EXISTS idx_jobs_type ON jobs(type);
+CREATE INDEX IF NOT EXISTS idx_jobs_cancelling ON jobs(isCancelling);
 CREATE INDEX IF NOT EXISTS idx_drops_session ON drops(sessionId);
+CREATE INDEX IF NOT EXISTS idx_drops_expires ON drops(expiresAt);
 CREATE INDEX IF NOT EXISTS idx_shortlinks_session ON shortlinks(sessionId);

@@ -141,10 +141,14 @@ app.get('*', (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`API server running on port ${PORT}`);
   console.log(`Data directory: ${DATA_DIR}`);
   if (!process.env.ADMIN_JWT_SECRET && process.env.ADMIN_PASSWORD) {
     console.warn('Warning: ADMIN_JWT_SECRET is not set. Falling back to ADMIN_PASSWORD for JWT signing.');
   }
 });
+server.timeout = 300000;
+server.headersTimeout = 10000;
+server.keepAliveTimeout = 30000;
+server.requestTimeout = 300000;

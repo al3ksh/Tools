@@ -39,6 +39,7 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 * 1024 } });
+const uploadGuest = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 const dropSizeLimit = (req, res, next) => {
   if (req.isAdmin) return next();
@@ -67,7 +68,18 @@ function verifyPassword(password, stored) {
 }
 
 // POST /api/drop/upload - upload a drop file
-router.post('/upload', dropSizeLimit, upload.single('file'), (req, res) => {
+router.post('/upload', dropSizeLimit, (req, res, next) => {
+  const uploader = req.isAdmin ? upload : uploadGuest;
+  uploader.single('file')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'File too large. Guest limit is 50MB.' });
+      }
+      return res.status(400).json({ error: 'Upload failed' });
+    }
+    next();
+  });
+}, (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });

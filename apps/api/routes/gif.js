@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
@@ -6,6 +7,14 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { DATA_DIR } = require('../db/database');
+
+const gifRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many GIF processing requests. Please try again in a minute.' },
+});
 
 const gifTempDir = path.join(DATA_DIR, 'uploads', 'gif-temp');
 if (!fs.existsSync(gifTempDir)) {
@@ -159,14 +168,14 @@ router.post('/info', upload.single('file'), async (req, res) => {
       format: format.format_name || null,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   } finally {
     cleanupFiles(tempFiles);
   }
 });
 
 // POST /api/gif/process - create/edit GIF from uploaded video or GIF
-router.post('/process', upload.single('file'), async (req, res) => {
+router.post('/process', gifRateLimit, upload.single('file'), async (req, res) => {
   const tempFiles = [];
 
   try {
@@ -232,7 +241,7 @@ router.post('/process', upload.single('file'), async (req, res) => {
     res.setHeader('X-Output-Size', String(stat.size));
     res.send(fs.readFileSync(outputPath));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   } finally {
     cleanupFiles(tempFiles);
   }
