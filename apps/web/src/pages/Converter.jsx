@@ -4,6 +4,7 @@ import { RefreshCw, FolderOpen, Upload, CheckCircle, Clock, Settings, AlertTrian
 import AudioTrimmer from '../components/AudioTrimmer';
 import Pagination from '../components/Pagination';
 import FileUploader from '../components/FileUploader';
+import useToast from '../hooks/useToast';
 
 function Converter({ sessionId }) {
   const [formData, setFormData] = useState({
@@ -14,13 +15,13 @@ function Converter({ sessionId }) {
     endTime: '',
   });
   const [jobs, setJobs] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadedPath, setUploadedPath] = useState('');
   const [selectedFile, setSelectedFile] = useState('');
   const [wavSrc, setWavSrc] = useState('');
   const audioRef = useRef(null);
-  const [toast, setToast] = useState(null);
+  const [toast, showToast] = useToast();
 
   // Pagination State
   const [allJobsPage, setAllJobsPage] = useState(1);
@@ -32,6 +33,9 @@ function Converter({ sessionId }) {
       setJobs(allJobs.filter(j => j.type === 'convert'));
     } catch (err) {
       console.error('Failed to fetch jobs:', err);
+      showToast('Failed to fetch data', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -40,11 +44,6 @@ function Converter({ sessionId }) {
     const interval = setInterval(fetchJobs, 2000);
     return () => clearInterval(interval);
   }, []);
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -377,7 +376,7 @@ function Converter({ sessionId }) {
                               {!job.deleted && (
                                 <button
                                   className="btn btn-secondary btn-sm"
-                                  onClick={() => handleDelete(job.id)}
+                                  onClick={() => { if (window.confirm('Delete this conversion?')) handleDelete(job.id); }}
                                   style={{ marginLeft: '5px' }}
                                   title="Delete"
                                 >
@@ -403,7 +402,7 @@ function Converter({ sessionId }) {
                           {job.status !== 'done' && job.status !== 'queued' && job.status !== 'running' && job.status !== 'deleted' && (
                             <button
                               className="btn btn-secondary btn-sm"
-                              onClick={() => handleDelete(job.id)}
+                                onClick={() => { if (window.confirm('Delete this conversion?')) handleDelete(job.id); }}
                               style={{ marginLeft: '5px' }}
                               title="Delete"
                             >

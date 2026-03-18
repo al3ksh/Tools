@@ -2,14 +2,15 @@ import { useState, useEffect } from 'react';
 import { api, formatDate, getFileUrl, PRESETS } from '../api';
 import { Download, Film, Clock, List, Settings, CheckCircle, XCircle, Trash2, ClipboardList, Inbox, XSquare, Archive, Link as LinkIcon, Youtube, ImageOff } from 'lucide-react';
 import Pagination from '../components/Pagination';
+import useToast from '../hooks/useToast';
 
 function Downloader({ sessionId }) {
   const [url, setUrl] = useState('');
   const [preset, setPreset] = useState('VIDEO_MP4_BEST');
   const [jobs, setJobs] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [toast, setToast] = useState(null);
+  const [toast, showToast] = useToast();
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [genericPreview, setGenericPreview] = useState(null);
@@ -65,6 +66,9 @@ function Downloader({ sessionId }) {
       setJobs(allJobs.filter(j => j.type === 'download'));
     } catch (err) {
       console.error('Failed to fetch jobs:', err);
+      showToast('Failed to fetch data', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -73,11 +77,6 @@ function Downloader({ sessionId }) {
     const interval = setInterval(fetchJobs, 2000);
     return () => clearInterval(interval);
   }, []);
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -348,7 +347,7 @@ function Downloader({ sessionId }) {
                           {job.status !== 'queued' && job.status !== 'running' && job.status !== 'failed' && job.status !== 'expired' && job.status !== 'deleted' && (
                             <button
                               className="btn btn-secondary btn-sm"
-                              onClick={() => handleDelete(job.id)}
+                              onClick={() => { if (window.confirm('Delete this download?')) handleDelete(job.id); }}
                               style={{ marginLeft: '5px' }}
                               title="Delete"
                             >

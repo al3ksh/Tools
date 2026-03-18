@@ -3,6 +3,7 @@ import { Files, Upload, Layers, Scissors, RotateCw, Trash2, Image, X, Clock, Dow
 import { api, formatBytes } from '../api';
 import * as pdfjsLib from 'pdfjs-dist';
 import FileUploader from '../components/FileUploader';
+import useToast from '../hooks/useToast';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
 
@@ -173,14 +174,9 @@ export default function PDFEditor() {
   const [imageFiles, setImageFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
-  const [toast, setToast] = useState(null);
+  const [toast, showToast] = useToast();
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
-
-  const showToast = (msg, type = 'success') => {
-    setToast({ message: msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
 
   const downloadBlob = (blob, filename) => {
     const url = URL.createObjectURL(blob);

@@ -6,6 +6,7 @@ import {
     Clock, AlertTriangle, Archive
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
+import useToast from '../hooks/useToast';
 
 const STATUS_ICONS = {
     queued: <Clock size={14} />,
@@ -21,18 +22,13 @@ function AdminPanel() {
     const [jobs, setJobs] = useState([]);
     const [drops, setDrops] = useState([]);
     const [links, setLinks] = useState([]);
-    const [toast, setToast] = useState(null);
+    const [toast, showToast] = useToast();
 
     // Pagination
     const [jobsPage, setJobsPage] = useState(1);
     const [dropsPage, setDropsPage] = useState(1);
     const [linksPage, setLinksPage] = useState(1);
     const ITEMS_PER_PAGE = 15;
-
-    const showToast = (message, type = 'success') => {
-        setToast({ message, type });
-        setTimeout(() => setToast(null), 3000);
-    };
 
     const fetchAll = async () => {
         try {
@@ -215,7 +211,7 @@ function AdminPanel() {
                                                         {job.status !== 'deleted' && (
                                                             <button
                                                                 className="btn btn-secondary btn-sm"
-                                                                onClick={() => handleDeleteJob(job.id)}
+                                                                 onClick={() => { if (window.confirm('Delete this job?')) handleDeleteJob(job.id); }}
                                                                 title="Delete"
                                                                 style={{ color: 'var(--error)' }}
                                                             >
@@ -314,7 +310,7 @@ function AdminPanel() {
                                                             </button>
                                                             <button
                                                                 className="btn btn-secondary btn-sm"
-                                                                onClick={() => handleDeleteDrop(drop.token)}
+                                                                 onClick={() => { if (window.confirm('Delete this file?')) handleDeleteDrop(drop.token); }}
                                                                 title="Delete"
                                                                 style={{ color: 'var(--error)' }}
                                                             >
@@ -411,7 +407,7 @@ function AdminPanel() {
                                                         </button>
                                                         <button
                                                             className="btn btn-secondary btn-sm"
-                                                            onClick={() => handleDeleteLink(link.slug)}
+                                                            onClick={() => { if (window.confirm('Delete this link?')) handleDeleteLink(link.slug); }}
                                                             title="Delete"
                                                             style={{ color: 'var(--error)' }}
                                                         >

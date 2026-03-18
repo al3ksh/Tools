@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api, formatDate } from '../api';
 import { Link as LinkIcon, Sparkles, CheckCircle, Copy, Clock, List, XCircle } from 'lucide-react';
 import Pagination from '../components/Pagination';
+import useToast from '../hooks/useToast';
 
 function Shortener({ sessionId }) {
   const [url, setUrl] = useState('');
@@ -10,7 +11,7 @@ function Shortener({ sessionId }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [createdLink, setCreatedLink] = useState(null);
-  const [toast, setToast] = useState(null);
+  const [toast, showToast] = useToast();
 
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
@@ -29,11 +30,6 @@ function Shortener({ sessionId }) {
     const interval = setInterval(fetchLinks, 5000);
     return () => clearInterval(interval);
   }, []);
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();

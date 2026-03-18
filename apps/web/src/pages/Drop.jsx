@@ -3,6 +3,7 @@ import { api, formatBytes, formatDate, getDropUrl } from '../api';
 import { FolderOpen, Upload, CheckCircle, Copy, Clock, List, Download, ClipboardList, XCircle, FileBox } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import FileUploader from '../components/FileUploader';
+import useToast from '../hooks/useToast';
 
 function Drop({ sessionId }) {
   const [file, setFile] = useState(null);
@@ -10,7 +11,7 @@ function Drop({ sessionId }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
   const [createdDrop, setCreatedDrop] = useState(null);
-  const [toast, setToast] = useState(null);
+  const [toast, showToast] = useToast();
 
   const isExpired = (drop) => drop.deleted === 1 || (drop.expiresAt && new Date(drop.expiresAt) < new Date());
 
@@ -23,6 +24,7 @@ function Drop({ sessionId }) {
       setDrops(data);
     } catch (err) {
       console.error('Failed to fetch drops:', err);
+      showToast('Failed to fetch data', 'error');
     }
   };
 
@@ -31,11 +33,6 @@ function Drop({ sessionId }) {
     const interval = setInterval(fetchDrops, 5000);
     return () => clearInterval(interval);
   }, []);
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);

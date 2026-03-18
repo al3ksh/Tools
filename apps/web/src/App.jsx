@@ -12,6 +12,7 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import QRCode from './pages/QRCode';
 import PDFEditor from './pages/PDFEditor';
 import GifMaker from './pages/GifMaker';
+import NotFound from './pages/NotFound';
 import './index.css';
 
 function App() {
@@ -243,6 +244,7 @@ function App() {
               <Route path="/d/:token" element={<DropView />} />
               {isAdmin && <Route path="/admin" element={<AdminPanel />} />}
               <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </main>
         </div>

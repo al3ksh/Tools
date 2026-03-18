@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { QrCode as QrCodeIcon, Download, Upload, Copy, ExternalLink, Settings, CheckCircle, XCircle } from 'lucide-react';
 import { api } from '../api';
 import jsQR from 'jsqr';
+import useToast from '../hooks/useToast';
 
 export default function QRCode() {
   const [activeTab, setActiveTab] = useState('generate');
@@ -25,12 +26,7 @@ export default function QRCode() {
   const [previewSrc, setPreviewSrc] = useState(null);
   const fileInputRef = useRef(null);
 
-  // Toast
-  const [toast, setToast] = useState(null);
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+  const [toast, showToast] = useToast();
 
   const handleGenerate = async () => {
     if (!text.trim()) return;
