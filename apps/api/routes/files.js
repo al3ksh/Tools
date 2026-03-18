@@ -21,6 +21,14 @@ router.get('/:jobId', (req, res) => {
   try {
     const { jobId } = req.params;
 
+    const job = statements.getJobById.get(jobId);
+    if (!job || job.deleted) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    if (job.expiresAt && new Date(job.expiresAt) < new Date()) {
+      return res.status(410).json({ error: 'File has expired' });
+    }
+
     for (const dir of ALLOWED_DIRS) {
       const dirPath = safePath(DATA_DIR, path.join(dir, jobId));
       if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {

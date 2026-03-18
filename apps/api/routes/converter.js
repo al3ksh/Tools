@@ -81,7 +81,7 @@ router.post('/', (req, res) => {
       originalName: source.originalName || req.body.source.originalName || 'uploaded_file',
       options: {
         format: options.format,
-        audioBitrate: options.audioBitrate || '192',
+        audioBitrate: clampNumber(options.audioBitrate, 64, 320, 192),
         trim: {
           startSec: options.startTime || undefined,
           endSec: options.endTime || undefined

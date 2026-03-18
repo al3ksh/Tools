@@ -40,10 +40,17 @@ function clampNumber(value, min, max, fallback) {
   return Math.min(Math.max(num, min), max);
 }
 
-function runProcess(command, args) {
+function runProcess(command, args, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args);
     let stderr = '';
+    let timedOut = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+      reject(new Error(`${command} timed out after ${timeoutMs / 1000}s`));
+    }, timeoutMs);
 
     child.stderr.on('data', (data) => {
       stderr += data.toString();
@@ -51,11 +58,16 @@ function runProcess(command, args) {
     });
 
     child.on('close', (code) => {
+      clearTimeout(timer);
+      if (timedOut) return;
       if (code === 0) resolve();
       else reject(new Error(`${command} exited with code ${code}: ${stderr.slice(-2000)}`));
     });
 
-    child.on('error', (err) => reject(err));
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 

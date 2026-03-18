@@ -124,6 +124,8 @@ const downloadHandler = (req, res) => {
     }
 
     statements.incrementDownloads.run(token);
+    res.setHeader('Content-Disposition', `attachment; filename="${drop.filename}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.download(filePath, drop.filename);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -143,7 +145,15 @@ router.get('/:token/info', (req, res) => {
       return res.status(404).json({ error: 'Drop not found' });
     }
 
-    res.json(drop);
+    res.json({
+      token: drop.token,
+      filename: drop.filename,
+      size: drop.size,
+      downloads: drop.downloads,
+      createdAt: drop.createdAt,
+      expiresAt: drop.expiresAt,
+      deleted: drop.deleted
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

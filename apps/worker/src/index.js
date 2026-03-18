@@ -7,6 +7,7 @@ const { PRESETS, JOB_STATUS } = require('../../../packages/shared/types');
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const DB_PATH = path.join(DATA_DIR, 'tools.db');
 const POLL_INTERVAL = 1000;
+const MAX_PROCESS_TIME = 30 * 60 * 1000;
 
 function safePath(baseDir, relativePath) {
   const resolved = path.resolve(baseDir, relativePath);
@@ -97,6 +98,11 @@ async function processDownloadJob(job) {
     let logsTail = '';
     let lastProgress = 0;
 
+    const processTimer = setTimeout(() => {
+      ytdlp.kill('SIGKILL');
+      finishWithError(jobId, 'Job timed out after 30 minutes');
+    }, MAX_PROCESS_TIME);
+
     ytdlp.stdout.on('data', (data) => {
       const text = data.toString();
       logsTail = logsTail + text;
@@ -120,6 +126,7 @@ async function processDownloadJob(job) {
     });
 
     ytdlp.on('close', (code, signal) => {
+      clearTimeout(processTimer);
       activeProcesses.delete(jobId);
 
       if (signal === 'SIGKILL') {
@@ -151,6 +158,7 @@ async function processDownloadJob(job) {
     });
 
     ytdlp.on('error', (err) => {
+      clearTimeout(processTimer);
       activeProcesses.delete(jobId);
       finishWithError(jobId, `Failed to start yt-dlp: ${err.message}`);
       reject(err);
@@ -215,6 +223,11 @@ async function processConvertJob(job) {
     activeProcesses.set(jobId, ffmpeg);
     let logsTail = '';
 
+    const processTimer = setTimeout(() => {
+      ffmpeg.kill('SIGKILL');
+      finishWithError(jobId, 'Job timed out after 30 minutes');
+    }, MAX_PROCESS_TIME);
+
     ffmpeg.stderr.on('data', (data) => {
       logsTail = logsTail + data.toString();
       if (logsTail.length > 5000) {
@@ -223,6 +236,7 @@ async function processConvertJob(job) {
     });
 
     ffmpeg.on('close', (code, signal) => {
+      clearTimeout(processTimer);
       activeProcesses.delete(jobId);
 
       if (signal === 'SIGKILL') {
@@ -250,6 +264,7 @@ async function processConvertJob(job) {
     });
 
     ffmpeg.on('error', (err) => {
+      clearTimeout(processTimer);
       activeProcesses.delete(jobId);
       finishWithError(jobId, `Failed to start ffmpeg: ${err.message}`);
       reject(err);
@@ -332,6 +347,24 @@ async function cleanupExpiredJobs() {
 
     if (expiredJobs.length > 0 || expiredDrops.length > 0) {
       console.log(`Expired ${expiredJobs.length} jobs and ${expiredDrops.length} drops`);
+    }
+
+    const staleJobs = db.prepare(`
+      SELECT * FROM jobs WHERE status = 'failed' AND finishedAt < ?
+    `).all(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
+    for (const job of staleJobs) {
+      console.log(`Cleaning up failed job ${job.id}`);
+      for (const dir of ['downloads', 'converted']) {
+        const jobDir = path.join(DATA_DIR, dir, job.id);
+        if (fs.existsSync(jobDir)) {
+          try { fs.rmSync(jobDir, { recursive: true, force: true }); } catch (e) { }
+        }
+      }
+    }
+
+    if (staleJobs.length > 0) {
+      console.log(`Cleaned up ${staleJobs.length} stale failed jobs`);
     }
   } catch (err) {
     console.error('Cleanup error:', err);
