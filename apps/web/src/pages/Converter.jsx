@@ -18,7 +18,7 @@ function Converter({ sessionId }) {
     endTime: '',
   });
   const [jobs, setJobs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadedPath, setUploadedPath] = useState('');
   const [selectedFile, setSelectedFile] = useState('');
@@ -26,6 +26,97 @@ function Converter({ sessionId }) {
   const audioRef = useRef(null);
   const [toast, showToast] = useToast();
   const [confirm, ConfirmDialog] = useConfirm();
+  const [allJobsPage, setAllJobsPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
+  const fetchJobs = async () => {
+    try {
+      const allJobs = await api.getJobs(sessionId);
+      setJobs(allJobs.filter(j => j.type === 'convert'));
+    } catch (err) {
+      showToast('Failed to fetch jobs', 'error');
+    }
+  };
+
+  useEffect(() => {
+    fetchJobs();
+    const interval = setInterval(fetchJobs, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleFileSelect = (file) => {
+    setSelectedFile(file);
+    setUploadedPath('');
+    if (file) {
+      showToast(`Selected: ${file.name}`);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      showToast('Please select a file first', 'error');
+      return;
+    }
+    setUploading(true);
+    try {
+      const result = await api.uploadFile(selectedFile, sessionId);
+      setUploadedPath(result.path);
+      showToast('File uploaded successfully!');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!uploadedPath) {
+      showToast('Please upload a file first', 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      const source = {
+        type: 'upload',
+        path: uploadedPath,
+        originalName: selectedFile.name
+      };
+      const options = {
+        format: formData.format,
+        preset: formData.preset,
+        audioBitrate: formData.audioBitrate,
+        startTime: formData.startTime ? parseFloat(formData.startTime) : null,
+        endTime: formData.endTime ? parseFloat(formData.endTime) : null
+      };
+      await api.createConvertJob(source, options, sessionId);
+      setSelectedFile('');
+      setUploadedPath('');
+      showToast('Conversion job added!');
+      fetchJobs();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const playWavPreview = async (jobId) => {
+    try {
+      const wavUrl = getFileUrl(jobId, 'preview.wav');
+      setWavSrc(wavUrl);
+      if (audioRef.current) {
+        audioRef.current.src = wavUrl;
+        audioRef.current.play();
+      }
+    } catch (err) {
+      console.error('Failed to play preview:', err);
+    }
+  };
 
   const handleDelete = async (jobId) => {
     try {
@@ -316,13 +407,6 @@ function Converter({ sessionId }) {
           )}
         </div>
       </div>
-
-      {/* Toast */}
-      {toast && (
-        <div className={`toast toast-${toast.type}`}>
-          {toast.type === 'success' ? <CheckCircle size={16} /> : <XCircle size={16} />} {toast.message}
-        </div>
-      )}
 
       {ConfirmDialog}
     </>

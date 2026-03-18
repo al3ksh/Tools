@@ -16,9 +16,10 @@ function Dashboard({ sessionId }) {
 
   const fetchData = async () => {
     try {
+      const isAdmin = !!localStorage.getItem('adminToken');
       const [jobsData, storageData] = await Promise.all([
         api.getJobs(sessionId),
-        api.getStorage()
+        isAdmin ? api.getStorage().catch(() => null) : Promise.resolve(null)
       ]);
       setJobs(jobsData);
       setStorage(storageData);

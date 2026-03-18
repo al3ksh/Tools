@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Sun, Moon, Shield, X, Menu, Cookie, FileText, QrCode, Files, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Settings, Sun, Moon, Shield, X, Menu, Cookie, FileText, QrCode, Files, Sparkles } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import Dashboard from './pages/Dashboard';
 import Downloader from './pages/Downloader';
@@ -142,6 +142,8 @@ function App() {
     }
   }, [accentColor]);
 
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
   return (
@@ -200,68 +202,50 @@ function App() {
                 </>
               )}
             </nav>
-            <div className="sidebar-footer">
-              <div className="user-profile-card">
-                <UserCircle size={32} className="user-avatar" />
-                <div className="user-details">
-                  <div
-                    className="user-name"
-                    style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}
-                    onClick={handleAdminToggle}
-                    title=""
+              <div className="sidebar-footer">
+                <div className="user-profile-card">
+                  <UserCircle size={32} className="user-avatar" />
+                  <div className="user-details">
+                    <div
+                      className="user-name"
+                      style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}
+                      onClick={handleAdminToggle}
+                      title=""
+                    >
+                      {isAdmin ? 'Admin Session' : 'Guest Session'}
+                      {isAdmin && <Shield size={14} color="var(--accent)" />}
+                    </div>
+                    <div className="user-session" title={sessionId}>ID: {sessionId.slice(0, 8)}...</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' }}>
+                  <div className="session-expiry" style={{ opacity: 0.5, fontSize: '11px' }}>{isAdmin ? '∞ No expiry' : 'Files expire in 1h'}</div>
+                  <button
+                    onClick={() => setShowSettingsModal(true)}
+                    style={{
+                      background: 'transparent', border: 'none', color: 'var(--text-secondary)',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '6px', borderRadius: '4px', transition: 'background 0.2s'
+                    }}
+                    title="Settings"
+                    onMouseOver={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
                   >
-                    {isAdmin ? 'Admin Session' : 'Guest Session'}
-                    {isAdmin && <Shield size={14} color="var(--accent)" />}
-                  </div>
-                  <div className="user-session" title={sessionId}>ID: {sessionId.slice(0, 8)}...</div>
+                    <Settings size={18} />
+                  </button>
                 </div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' }}>
-                <div className="session-expiry" style={{ opacity: 0.5, fontSize: '11px' }}>{isAdmin ? '∞ No expiry' : 'Files expire in 1h'}</div>
-                <button
-                  onClick={toggleTheme}
+                <NavLink
+                  to="/privacy"
+                  onClick={() => setSidebarOpen(false)}
                   style={{
-                    background: 'transparent', border: 'none', color: 'var(--text-secondary)',
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    padding: '6px', borderRadius: '4px', transition: 'background 0.2s'
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    marginTop: '10px', fontSize: '11px', color: 'var(--text-secondary)',
+                    textDecoration: 'none', opacity: 0.6
                   }}
-                  title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
-                  onMouseOver={(e) => e.currentTarget.style.background = 'var(--bg-hover)'}
-                  onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
                 >
-                  {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-                </button>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
-                  <div style={{
-                    width: '18px', height: '18px', borderRadius: '50%', border: '2px solid var(--border)',
-                    background: accentColor || 'var(--accent)', cursor: 'pointer', flexShrink: 0,
-                  }} title="Accent color">
-                    <input
-                      type="color"
-                      value={accentColor || '#2c93fa'}
-                      onChange={(e) => {
-                        const c = e.target.value;
-                        setAccentColor(c);
-                        localStorage.setItem('accentColor', c);
-                      }}
-                      style={{ opacity: 0, width: '100%', height: '100%', cursor: 'pointer', padding: 0 }}
-                    />
-                  </div>
-                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Accent</span>
-                </div>
+                  <FileText size={12} /> Privacy Policy
+                </NavLink>
               </div>
-              <NavLink
-                to="/privacy"
-                onClick={() => setSidebarOpen(false)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '6px',
-                  marginTop: '10px', fontSize: '11px', color: 'var(--text-secondary)',
-                  textDecoration: 'none', opacity: 0.6
-                }}
-              >
-                <FileText size={12} /> Privacy Policy
-              </NavLink>
-            </div>
           </aside>
           <main className="main-content">
             <ErrorBoundary>
@@ -326,6 +310,89 @@ function App() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSettingsModal && (
+        <div className="modal-overlay" onClick={() => setShowSettingsModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+            <div className="modal-header">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Settings size={18} /> Settings
+              </h3>
+              <button className="btn-icon" onClick={() => setShowSettingsModal(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px', fontWeight: 600 }}>Appearance</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>Theme</span>
+                      <button className="btn btn-secondary btn-sm" onClick={toggleTheme} style={{ padding: '4px 10px', fontSize: '12px' }}>
+                        {isDarkMode ? <><Sun size={14} /> Light</> : <><Moon size={14} /> Dark</>}
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>Accent Color</span>
+                      <div style={{
+                        width: '28px', height: '28px', borderRadius: '6px', border: '2px solid var(--border)',
+                        background: accentColor || 'var(--accent)', cursor: 'pointer', flexShrink: 0, overflow: 'hidden',
+                      }}>
+                        <input
+                          type="color"
+                          value={accentColor || '#2c93fa'}
+                          onChange={(e) => {
+                            const c = e.target.value;
+                            setAccentColor(c);
+                            localStorage.setItem('accentColor', c);
+                          }}
+                          style={{ opacity: 0, width: '100%', height: '100%', cursor: 'pointer', padding: 0 }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px', fontWeight: 600 }}>Session</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{
+                      padding: '8px 10px', background: 'var(--bg-hover)', borderRadius: '6px',
+                      fontSize: '12px', color: 'var(--text-primary)', fontFamily: 'monospace',
+                      wordBreak: 'break-all',
+                    }}>
+                      {sessionId}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      {isAdmin ? 'Admin session — no file expiry' : 'Guest session — files expire in 1 hour'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: '16px', paddingTop: '16px' }}>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px', fontWeight: 600 }}>Admin</div>
+                {isAdmin ? (
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => { setShowSettingsModal(false); handleAdminToggle(); }}
+                    style={{ width: '100%', fontSize: '13px' }}
+                  >
+                    <Shield size={14} style={{ marginRight: '6px' }} /> Logout from Admin
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => { setShowSettingsModal(false); setLoginError(''); setPasswordInput(''); setShowLoginModal(true); }}
+                    style={{ width: '100%', fontSize: '13px' }}
+                  >
+                    <Shield size={14} style={{ marginRight: '6px' }} /> Login as Admin
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
