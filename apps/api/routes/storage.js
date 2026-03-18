@@ -30,9 +30,33 @@ function getDirectorySize(dirPath) {
 function formatBytes(bytes) {
   if (bytes === 0) return '0 B';
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function getDiskUsage(dirPath) {
+  try {
+    const stats = fs.statfsSync(dirPath);
+    const blockSize = stats.bsize;
+    const totalBlocks = stats.blocks;
+    const freeBlocks = stats.bfree;
+    const totalBytes = totalBlocks * blockSize;
+    const availableBytes = freeBlocks * blockSize;
+    const usedBytes = totalBytes - availableBytes;
+    const usedPercent = totalBytes > 0 ? (usedBytes / totalBytes) * 100 : 0;
+    return {
+      totalBytes,
+      usedBytes,
+      availableBytes,
+      totalFormatted: formatBytes(totalBytes),
+      usedFormatted: formatBytes(usedBytes),
+      availableFormatted: formatBytes(availableBytes),
+      usedPercent: parseFloat(usedPercent.toFixed(1)),
+    };
+  } catch (err) {
+    return null;
+  }
 }
 
 // GET /api/storage - storage usage info
@@ -55,13 +79,20 @@ router.get('/', (req, res) => {
       total += size;
     }
 
-    res.json({
+    const response = {
       directories: storage,
       total: {
         bytes: total,
         formatted: formatBytes(total)
       }
-    });
+    };
+
+    const disk = getDiskUsage(DATA_DIR);
+    if (disk) {
+      response.disk = disk;
+    }
+
+    res.json(response);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

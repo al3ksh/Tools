@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { api, formatDate, formatBytes, getFileUrl, getDropUrl } from '../api';
 import {
     Shield, Download, FileAudio, Link as LinkIcon, FolderOpen,
-    Trash2, Copy, ExternalLink, CheckCircle, XCircle
+    Trash2, Copy, ExternalLink, CheckCircle, XCircle, HardDrive, Database, FileDown, ArrowUpFromLine, PackageOpen
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import EmptyState from '../components/EmptyState';
@@ -15,6 +15,7 @@ function AdminPanel() {
     const [jobs, setJobs] = useState([]);
     const [drops, setDrops] = useState([]);
     const [links, setLinks] = useState([]);
+    const [storage, setStorage] = useState(null);
     const [toast, showToast] = useToast();
     const [confirm, ConfirmDialog] = useConfirm();
 
@@ -39,8 +40,18 @@ function AdminPanel() {
         }
     };
 
+    const fetchStorage = async () => {
+        try {
+            const data = await api.getStorage();
+            setStorage(data);
+        } catch (err) {
+            console.error('Storage fetch error:', err);
+        }
+    };
+
     useEffect(() => {
         fetchAll();
+        fetchStorage();
         const interval = setInterval(fetchAll, 5000);
         return () => clearInterval(interval);
     }, []);
@@ -84,6 +95,7 @@ function AdminPanel() {
         { id: 'jobs', label: 'Jobs', icon: <Download size={16} />, count: jobs.length },
         { id: 'drops', label: 'Drops', icon: <FolderOpen size={16} />, count: drops.length },
         { id: 'links', label: 'Shortlinks', icon: <LinkIcon size={16} />, count: links.length },
+        { id: 'storage', label: 'Storage', icon: <HardDrive size={16} /> },
     ];
 
     return (
@@ -129,15 +141,17 @@ function AdminPanel() {
                             }}
                         >
                             {tab.icon} {tab.label}
+                            {tab.count !== undefined && (
                             <span style={{
                                 background: activeTab === tab.id ? 'rgba(255,255,255,0.2)' : 'var(--bg-tertiary)',
                                 padding: '2px 8px',
-                                borderRadius: '10px',
-                                fontSize: '11px',
-                            }}>
-                                {tab.count}
-                            </span>
-                        </button>
+                                 borderRadius: '10px',
+                                 fontSize: '11px',
+                             }}>
+                                 {tab.count}
+                             </span>
+                            )}
+                         </button>
                     ))}
                 </div>
 
@@ -415,6 +429,95 @@ function AdminPanel() {
                                 onPageChange={setLinksPage}
                             />
                         )}
+                    </div>
+                )}
+
+                {/* Storage Tab */}
+                {activeTab === 'storage' && storage && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {storage.disk && (
+                            <div className="card">
+                                <div className="card-header">
+                                    <div className="card-title"><HardDrive size={18} /> Disk Usage</div>
+                                </div>
+                                <div className="card-body">
+                                    <div style={{
+                                        height: '24px', borderRadius: '6px', overflow: 'hidden',
+                                        background: 'var(--bg-secondary)', display: 'flex',
+                                    }}>
+                                        <div style={{
+                                            width: `${Math.min(storage.disk.usedPercent, 100)}%`,
+                                            background: storage.disk.usedPercent >= 85 ? 'var(--error)'
+                                                : storage.disk.usedPercent >= 60 ? 'var(--warning)'
+                                                : 'var(--success)',
+                                            borderRadius: '6px',
+                                            transition: 'width 0.5s ease',
+                                        }} />
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', fontSize: '13px' }}>
+                                        <span style={{ color: 'var(--text-secondary)' }}>
+                                            {storage.disk.usedFormatted} used
+                                        </span>
+                                        <span style={{ fontWeight: 600, color: storage.disk.usedPercent >= 85 ? 'var(--error)'
+                                            : storage.disk.usedPercent >= 60 ? 'var(--warning)'
+                                            : 'var(--text-primary)' }}>
+                                            {storage.disk.usedPercent}%
+                                        </span>
+                                        <span style={{ color: 'var(--text-secondary)' }}>
+                                            {storage.disk.availableFormatted} free
+                                        </span>
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', textAlign: 'center' }}>
+                                        Total: {storage.disk.totalFormatted}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div style={{
+                            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px',
+                        }}>
+                            {[
+                                { key: 'downloads', label: 'Downloads', icon: <FileDown size={20} />, color: '#3498db' },
+                                { key: 'converted', label: 'Converted', icon: <FileAudio size={20} />, color: '#2ecc71' },
+                                { key: 'uploads', label: 'Uploads', icon: <ArrowUpFromLine size={20} />, color: '#e67e22' },
+                                { key: 'drops', label: 'Drops', icon: <PackageOpen size={20} />, color: '#9b59b6' },
+                            ].map(({ key, label, icon, color }) => {
+                                const dir = storage.directories[key];
+                                const pct = storage.total.bytes > 0 ? ((dir.bytes / storage.total.bytes) * 100).toFixed(1) : 0;
+                                return (
+                                    <div key={key} className="card" style={{ margin: 0 }}>
+                                        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                <div style={{
+                                                    width: '40px', height: '40px', borderRadius: '10px',
+                                                    background: `${color}18`, color,
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                }}>
+                                                    {icon}
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontSize: '13px', fontWeight: 600 }}>{label}</div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{dir.formatted}</div>
+                                                </div>
+                                            </div>
+                                            <div style={{
+                                                height: '6px', borderRadius: '3px', overflow: 'hidden',
+                                                background: 'var(--bg-secondary)',
+                                            }}>
+                                                <div style={{
+                                                    width: `${Math.min(pct, 100)}%`,
+                                                    height: '100%', borderRadius: '3px',
+                                                    background: color,
+                                                    transition: 'width 0.5s ease',
+                                                }} />
+                                            </div>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{pct}% of total</div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
                 )}
             </div>
