@@ -14,7 +14,6 @@ function Downloader({ sessionId }) {
   const [toast, showToast] = useToast();
   const [confirm, ConfirmDialog] = useConfirm();
   const [imgLoaded, setImgLoaded] = useState(false);
-  const [imgError, setImgError] = useState(false);
   const [genericPreview, setGenericPreview] = useState(null);
 
   const [myJobsPage, setMyJobsPage] = useState(1);
@@ -98,8 +97,6 @@ function Downloader({ sessionId }) {
       setLoading(false);
     }
   };
-
-  const myJobs = jobs.filter(j => j.inputJson?.sessionId === sessionId);
 
   const handleDelete = async (jobId) => {
     try {

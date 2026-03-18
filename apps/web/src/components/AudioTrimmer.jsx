@@ -17,9 +17,10 @@ export default function AudioTrimmer({ file, onChange, initialStart, initialEnd 
     useEffect(() => {
         if (!containerRef.current || !file) return;
 
+        const isDark = !document.body.classList.contains('light-mode');
         const ws = WaveSurfer.create({
             container: containerRef.current,
-            waveColor: 'rgba(255, 255, 255, 0.4)',
+            waveColor: isDark ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.25)',
             progressColor: 'var(--accent)',
             cursorColor: 'var(--text-primary)',
             barWidth: 2,

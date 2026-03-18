@@ -71,8 +71,6 @@ function Drop({ sessionId }) {
     return window.location.origin;
   };
 
-  const myDrops = drops.filter(d => d.sessionId === sessionId);
-
   return (
     <>
       <div className="page-header">

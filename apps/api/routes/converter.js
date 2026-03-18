@@ -6,6 +6,12 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { statements, DATA_DIR } = require('../db/database');
 
+function clampNumber(value, min, max, fallback) {
+  const num = Number(value);
+  if (Number.isNaN(num)) return fallback;
+  return Math.min(Math.max(num, min), max);
+}
+
 // Configure multer for uploads
 const uploadsDir = path.join(DATA_DIR, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
