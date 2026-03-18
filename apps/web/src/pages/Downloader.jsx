@@ -289,7 +289,7 @@ function Downloader({ sessionId }) {
                 <tbody>
                   {jobs.slice((myJobsPage - 1) * ITEMS_PER_PAGE, myJobsPage * ITEMS_PER_PAGE).map(job => {
                     const input = job.inputJson || {};
-                    const shortUrl = input.url ? new URL(input.url).hostname : '-';
+                    const shortUrl = (() => { try { return input.url ? new URL(input.url).hostname : '-'; } catch { return '-'; } })();
                     return (
                       <tr key={job.id}>
                         <td>

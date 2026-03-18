@@ -16,7 +16,6 @@ function Converter({ sessionId }) {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(null);
   const [uploadedPath, setUploadedPath] = useState('');
   const [selectedFile, setSelectedFile] = useState('');
   const [wavSrc, setWavSrc] = useState('');
@@ -66,7 +65,6 @@ function Converter({ sessionId }) {
     }
 
     setUploading(true);
-    setUploadProgress(0);
 
     try {
       const result = await api.uploadFile(selectedFile, sessionId);
@@ -76,7 +74,6 @@ function Converter({ sessionId }) {
       showToast(err.message, 'error');
     } finally {
       setUploading(false);
-      setUploadProgress(null);
     }
   };
 
