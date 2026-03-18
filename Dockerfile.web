@@ -7,7 +7,7 @@ COPY package.json ./
 COPY apps/web/package.json ./apps/web/
 COPY packages/shared/package.json ./packages/shared/
 
-RUN npm install
+RUN --mount=type=cache,target=/root/.npm npm install
 
 COPY apps/web ./apps/web
 COPY packages/shared ./packages/shared
@@ -36,7 +36,7 @@ COPY package.json ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/shared/package.json ./packages/shared/
 
-RUN npm install
+RUN --mount=type=cache,target=/root/.npm npm install
 
 # Clean up build tools to keep image smaller
 RUN apk del make g++ gcc musl-dev
