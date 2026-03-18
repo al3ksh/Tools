@@ -3,15 +3,18 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const { statements } = require('../db/database');
 const { PRESETS } = require('../../../packages/shared/types');
+const { validatePublicUrl } = require('./utils');
 
 // POST /api/downloader - create a download job
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { url, preset, sessionId } = req.body;
 
     if (!url) {
       return res.status(400).json({ error: 'URL is required' });
     }
+
+    await validatePublicUrl(url);
 
     if (!PRESETS[preset]) {
       return res.status(400).json({ error: 'Invalid preset. Use: VIDEO_MP4_BEST, VIDEO_MP4_720P, AUDIO_MP3_192, AUDIO_OPUS_96' });
@@ -25,7 +28,12 @@ router.post('/', (req, res) => {
 
     res.json({ jobId });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const code = (err.message && (
+      err.message.includes('Invalid') ||
+      err.message.includes('Blocked') ||
+      err.message.includes('scheme')
+    )) ? 400 : 500;
+    res.status(code).json({ error: err.message });
   }
 });
 

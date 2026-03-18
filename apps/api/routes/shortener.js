@@ -54,8 +54,7 @@ router.get('/list', (req, res) => {
       return res.json(links);
     }
 
-    const links = statements.getAllShortlinks.all();
-    res.json(links);
+    return res.json([]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

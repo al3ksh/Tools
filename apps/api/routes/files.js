@@ -7,14 +7,22 @@ const { statements, DATA_DIR } = require('../db/database');
 // Allowlist of directories that can be served
 const ALLOWED_DIRS = ['downloads', 'converted', 'uploads'];
 
+function safePath(baseDir, relativePath) {
+  const resolved = path.resolve(baseDir, relativePath);
+  const normalizedBase = path.resolve(baseDir);
+  if (!resolved.startsWith(normalizedBase + path.sep) && resolved !== normalizedBase) {
+    throw new Error('Invalid path');
+  }
+  return resolved;
+}
+
 // GET /api/files/:jobId - get output file (auto-find first file)
 router.get('/:jobId', (req, res) => {
   try {
     const { jobId } = req.params;
 
-    // Find the first file in allowed directories
     for (const dir of ALLOWED_DIRS) {
-      const dirPath = path.join(DATA_DIR, dir, jobId);
+      const dirPath = safePath(DATA_DIR, path.join(dir, jobId));
       if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
         const files = fs.readdirSync(dirPath);
         if (files.length > 0) {
@@ -34,13 +42,10 @@ router.get('/:jobId', (req, res) => {
 router.get('/:jobId/:filename(*)', (req, res) => {
   try {
     const { jobId, filename } = req.params;
-
-    // Decode URL-encoded filename
     const decodedFilename = decodeURIComponent(filename);
 
-    // Find the file in allowed directories
     for (const dir of ALLOWED_DIRS) {
-      const filePath = path.join(DATA_DIR, dir, jobId, decodedFilename);
+      const filePath = safePath(DATA_DIR, path.join(dir, jobId, decodedFilename));
       if (fs.existsSync(filePath)) {
         return res.download(filePath, decodedFilename);
       }
@@ -61,7 +66,7 @@ router.get('/list/:type', (req, res) => {
       return res.status(400).json({ error: 'Invalid type' });
     }
 
-    const dirPath = path.join(DATA_DIR, type);
+    const dirPath = safePath(DATA_DIR, type);
     if (!fs.existsSync(dirPath)) {
       return res.json([]);
     }

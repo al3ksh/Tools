@@ -23,7 +23,7 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
+const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 * 1024 } });
 
 // Size limit middleware — unlimited for admin, 50MB for guests
 const dropSizeLimit = (req, res, next) => {
@@ -75,7 +75,7 @@ router.get('/list', (req, res) => {
     } else if (sessionId) {
       drops = statements.getDropsBySession.all(sessionId);
     } else {
-      drops = statements.getAllDrops.all();
+      drops = [];
     }
     res.json(drops);
   } catch (err) {

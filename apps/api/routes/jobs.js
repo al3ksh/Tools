@@ -13,7 +13,7 @@ router.get('/', (req, res) => {
     } else if (sessionId) {
       jobs = statements.getJobsBySession.all(sessionId, 50);
     } else {
-      jobs = statements.getRecentJobs.all(50);
+      jobs = [];
     }
     res.json(jobs.map(job => ({
       ...job,
