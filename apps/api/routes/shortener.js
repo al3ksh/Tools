@@ -2,18 +2,28 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const { statements } = require('../db/database');
+const { validatePublicUrl } = require('./utils');
+
+const SLUG_RE = /^[a-zA-Z0-9_-]{3,50}$/;
+const RESERVED_SLUGS = ['list', 'admin', 'api', 'd', 's', 'qr', 'pdf', 'gif', 'drop', 'downloader', 'converter', 'shortener'];
 
 // POST /api/shorten - create a short link
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { url, slug, sessionId } = req.body;
 
-    if (!url) {
-      return res.status(400).json({ error: 'URL is required' });
+    if (!url) return res.status(400).json({ error: 'URL is required' });
+    if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'URL must start with http:// or https://' });
+
+    try {
+      await validatePublicUrl(url);
+    } catch (err) {
+      return res.status(400).json({ error: 'URL points to a private or blocked address' });
     }
 
-    if (!/^https?:\/\//i.test(url)) {
-      return res.status(400).json({ error: 'URL must start with http:// or https://' });
+    if (slug) {
+      if (!SLUG_RE.test(slug)) return res.status(400).json({ error: 'Slug must be 3-50 alphanumeric characters (a-z, 0-9, -, _)' });
+      if (RESERVED_SLUGS.includes(slug.toLowerCase())) return res.status(400).json({ error: 'This slug is reserved' });
     }
 
     const finalSlug = slug || uuidv4().substring(0, 8);
@@ -34,7 +44,8 @@ router.post('/', (req, res) => {
 
     res.json({ slug: finalSlug, shortUrl });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err.message.includes('UNIQUE constraint')) return res.status(409).json({ error: 'Slug already exists' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -56,7 +67,7 @@ router.get('/list', (req, res) => {
 
     return res.json([]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -70,7 +81,7 @@ router.delete('/:slug', (req, res) => {
     statements.deleteShortlink.run(slug);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -91,7 +102,7 @@ const redirectHandler = (req, res) => {
     statements.incrementClicks.run(slug);
     res.redirect(302, link.targetUrl);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
 

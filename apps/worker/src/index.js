@@ -193,8 +193,10 @@ async function processConvertJob(job) {
 
   function getAudioDuration(filePath) {
     try {
-      const { execSync } = require('child_process');
-      const out = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${filePath}"`, { encoding: 'utf8' }).trim();
+      const { execFileSync } = require('child_process');
+      const out = execFileSync('ffprobe', [
+        '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', filePath
+      ], { encoding: 'utf8' }).trim();
       return parseFloat(out) || 0;
     } catch (e) { return 0; }
   }

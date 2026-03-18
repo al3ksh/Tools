@@ -89,8 +89,8 @@ router.post('/', (req, res) => {
         format: options.format,
         audioBitrate: clampNumber(options.audioBitrate, 64, 320, 192),
         trim: {
-          startSec: options.startTime || undefined,
-          endSec: options.endTime || undefined
+          startSec: options.startTime != null ? Number(options.startTime) : undefined,
+          endSec: options.endTime != null ? Number(options.endTime) : undefined
         },
         normalize: {
           enabled: options.preset !== 'none',

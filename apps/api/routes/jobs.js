@@ -1,6 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { statements } = require('../db/database');
+const fs = require('fs');
+const path = require('path');
+const { statements, DATA_DIR } = require('../db/database');
+
+function checkJobOwnership(job, sessionId, isAdmin) {
+  if (!job) return false;
+  if (isAdmin) return true;
+  return job.sessionId === sessionId;
+}
 
 // GET /api/jobs - recent 50 jobs (filtered by session)
 router.get('/', (req, res) => {
@@ -21,7 +29,7 @@ router.get('/', (req, res) => {
       outputJson: job.outputJson ? JSON.parse(job.outputJson) : null
     })));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -29,16 +37,15 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   try {
     const job = statements.getJobById.get(req.params.id);
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!checkJobOwnership(job, req.query.sessionId, req.isAdmin)) return res.status(403).json({ error: 'Access denied' });
     res.json({
       ...job,
       inputJson: job.inputJson ? JSON.parse(job.inputJson) : null,
       outputJson: job.outputJson ? JSON.parse(job.outputJson) : null
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -46,19 +53,11 @@ router.get('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const job = statements.getJobById.get(req.params.id);
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!checkJobOwnership(job, req.query.sessionId, req.isAdmin)) return res.status(403).json({ error: 'Access denied' });
 
-    // Mark as deleted
     statements.deleteJob.run(new Date().toISOString(), req.params.id);
 
-    // Delete files from disk
-    const fs = require('fs');
-    const path = require('path');
-    const { DATA_DIR } = require('../db/database');
-
-    // Try to delete files in downloads or converted directories
     const dirs = ['downloads', 'converted'];
     for (const dir of dirs) {
       const jobDir = path.join(DATA_DIR, dir, req.params.id);
@@ -69,7 +68,7 @@ router.delete('/:id', (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -77,19 +76,14 @@ router.delete('/:id', (req, res) => {
 router.post('/:id/cancel', (req, res) => {
   try {
     const job = statements.getJobById.get(req.params.id);
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-
-    if (job.status !== 'queued' && job.status !== 'running') {
-      return res.status(400).json({ error: 'Job is not cancelable' });
-    }
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!checkJobOwnership(job, req.query.sessionId, req.isAdmin)) return res.status(403).json({ error: 'Access denied' });
+    if (job.status !== 'queued' && job.status !== 'running') return res.status(400).json({ error: 'Job is not cancelable' });
 
     statements.cancelJob.run(req.params.id);
-
     res.json({ success: true, message: 'Job cancellation requested' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

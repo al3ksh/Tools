@@ -7,6 +7,15 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { statements, DATA_DIR } = require('../db/database');
 
+function safePath(baseDir, relativePath) {
+  const resolved = path.resolve(baseDir, relativePath);
+  const normalizedBase = path.resolve(baseDir);
+  if (!resolved.startsWith(normalizedBase + path.sep) && resolved !== normalizedBase) {
+    throw new Error('Invalid path');
+  }
+  return resolved;
+}
+
 function setContentDisposition(res, filename) {
   const encoded = encodeURIComponent(filename).replace(/['()]/g, escape);
   const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_');
@@ -121,7 +130,7 @@ router.delete('/:token', (req, res) => {
     const { token } = req.params;
     const drop = statements.getDrop.get(token);
     if (drop && drop.path) {
-      const fullPath = path.join(DATA_DIR, drop.path);
+      const fullPath = safePath(DATA_DIR, drop.path);
       if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
     }
     statements.deleteDrop.run(token);
@@ -149,7 +158,7 @@ router.get('/:token/download', (req, res) => {
       return res.status(403).json({ error: 'Password required', requiresPassword: true });
     }
 
-    const filePath = path.join(DATA_DIR, drop.path);
+    const filePath = safePath(DATA_DIR, drop.path);
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'File not found' });
@@ -191,7 +200,7 @@ router.post('/:token/download', express.json(), (req, res) => {
       return res.status(403).json({ error: 'Wrong password' });
     }
 
-    const filePath = path.join(DATA_DIR, drop.path);
+    const filePath = safePath(DATA_DIR, drop.path);
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'File not found' });
