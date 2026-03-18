@@ -4,8 +4,13 @@ const path = require('path');
 const fs = require('fs');
 const { statements, DATA_DIR } = require('../db/database');
 
-// Allowlist of directories that can be served
 const ALLOWED_DIRS = ['downloads', 'converted', 'uploads'];
+
+function setContentDisposition(res, filename) {
+  const encoded = encodeURIComponent(filename).replace(/['()]/g, escape);
+  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_');
+  res.setHeader('Content-Disposition', `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`);
+}
 
 function safePath(baseDir, relativePath) {
   const resolved = path.resolve(baseDir, relativePath);
@@ -35,6 +40,8 @@ router.get('/:jobId', (req, res) => {
         const files = fs.readdirSync(dirPath);
         if (files.length > 0) {
           const filePath = path.join(dirPath, files[0]);
+          setContentDisposition(res, files[0]);
+          res.setHeader('X-Content-Type-Options', 'nosniff');
           return res.download(filePath, files[0]);
         }
       }
@@ -55,6 +62,8 @@ router.get('/:jobId/:filename(*)', (req, res) => {
     for (const dir of ALLOWED_DIRS) {
       const filePath = safePath(DATA_DIR, path.join(dir, jobId, decodedFilename));
       if (fs.existsSync(filePath)) {
+        setContentDisposition(res, decodedFilename);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
         return res.download(filePath, decodedFilename);
       }
     }

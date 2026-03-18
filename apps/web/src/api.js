@@ -87,6 +87,45 @@ export const api = {
 
   getDrops: (sessionId) => fetchApi(`/drop/list${sessionId ? `?sessionId=${sessionId}` : ''}`),
   getDropInfo: (token) => fetchApi(`/drop/${token}/info`),
+  downloadDrop: async (token, password) => {
+    if (password) {
+      const response = await fetch(`${API_BASE}/drop/${token}/download`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Download failed' }));
+        throw new Error(error.error || 'Download failed');
+      }
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'download';
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?([^";\n]+)"?/);
+        if (match) filename = match[1];
+      }
+      return { blob, filename };
+    }
+    const response = await fetch(`${API_BASE}/drop/${token}/download`, {
+      credentials: 'include',
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Download failed' }));
+      if (error.requiresPassword) throw new Error('PASSWORD_REQUIRED');
+      throw new Error(error.error || 'Download failed');
+    }
+    const blob = await response.blob();
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = 'download';
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="?([^";\n]+)"?/);
+      if (match) filename = match[1];
+    }
+    return { blob, filename };
+  },
 
   // Storage
   getStorage: () => fetchApi('/storage'),

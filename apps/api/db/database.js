@@ -63,6 +63,11 @@ try {
     console.log('Migration: Added sessionId column to drops');
   }
 
+  if (!dropColumnNames.includes('password')) {
+    db.exec('ALTER TABLE drops ADD COLUMN password TEXT');
+    console.log('Migration: Added password column to drops');
+  }
+
   // Jobs sessionId migration
   if (!columnNames.includes('sessionId')) {
     db.exec('ALTER TABLE jobs ADD COLUMN sessionId TEXT');
@@ -166,8 +171,8 @@ const statements = {
 
   // Drops
   createDrop: db.prepare(`
-    INSERT INTO drops (token, filename, path, size, createdAt, expiresAt, sessionId)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO drops (token, filename, path, size, createdAt, expiresAt, sessionId, password)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `),
 
   getDrop: db.prepare(`

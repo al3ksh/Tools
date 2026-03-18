@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api, formatBytes, formatDate, getDropUrl } from '../api';
-import { FolderOpen, Upload, CheckCircle, Copy, Clock, List, Download, ClipboardList, XCircle, FileBox } from 'lucide-react';
+import { FolderOpen, Upload, CheckCircle, Copy, Clock, List, Download, ClipboardList, XCircle, FileBox, Lock, Eye, EyeOff, KeyRound } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import FileUploader from '../components/FileUploader';
@@ -13,6 +13,13 @@ function Drop({ sessionId }) {
   const [error, setError] = useState(null);
   const [createdDrop, setCreatedDrop] = useState(null);
   const [toast, showToast] = useToast();
+  const [uploadPassword, setUploadPassword] = useState('');
+  const [showUploadPassword, setShowUploadPassword] = useState(false);
+
+  const [passwordModal, setPasswordModal] = useState(null);
+  const [downloadPassword, setDownloadPassword] = useState('');
+  const [downloadError, setDownloadError] = useState('');
+  const [downloading, setDownloading] = useState(false);
 
   const isExpired = (drop) => drop.deleted === 1 || (drop.expiresAt && new Date(drop.expiresAt) < new Date());
 
@@ -35,11 +42,6 @@ function Drop({ sessionId }) {
     return () => clearInterval(interval);
   }, []);
 
-  const handleFileChange = (e) => {
-    setFile(e.target.files[0]);
-    setCreatedDrop(null);
-  };
-
   const handleUpload = async (e) => {
     e.preventDefault();
     if (!file) return;
@@ -49,17 +51,77 @@ function Drop({ sessionId }) {
     setCreatedDrop(null);
 
     try {
-      const result = await api.uploadDrop(file, sessionId);
+      const formData = new FormData();
+      formData.append('file', file);
+      if (sessionId) formData.append('sessionId', sessionId);
+      if (uploadPassword.trim()) formData.append('password', uploadPassword.trim());
+
+      const response = await fetch(`${window.location.origin}/api/drop/upload`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(err.error || 'Upload failed');
+      }
+      const result = await response.json();
       setCreatedDrop(result);
       setFile(null);
-      const fileInput = document.querySelector('input[type="file"]');
-      if (fileInput) fileInput.value = '';
+      setUploadPassword('');
       showToast('File uploaded successfully!');
       fetchDrops();
     } catch (err) {
       setError(err.message);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const triggerDownload = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownload = async (drop) => {
+    if (drop.hasPassword) {
+      setPasswordModal(drop);
+      setDownloadPassword('');
+      setDownloadError('');
+      return;
+    }
+    try {
+      const { blob, filename } = await api.downloadDrop(drop.token);
+      triggerDownload(blob, filename);
+    } catch (err) {
+      if (err.message === 'PASSWORD_REQUIRED') {
+        setPasswordModal(drop);
+        setDownloadPassword('');
+        setDownloadError('');
+      } else {
+        showToast(err.message, 'error');
+      }
+    }
+  };
+
+  const handlePasswordDownload = async () => {
+    if (!passwordModal || !downloadPassword.trim()) return;
+    setDownloading(true);
+    setDownloadError('');
+    try {
+      const { blob, filename } = await api.downloadDrop(passwordModal.token, downloadPassword);
+      setPasswordModal(null);
+      triggerDownload(blob, filename);
+    } catch (err) {
+      setDownloadError(err.message);
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -103,6 +165,35 @@ function Drop({ sessionId }) {
                 <div className="form-help">{localStorage.getItem('adminToken') ? 'Admin: No size limit' : 'Maximum file size: 50MB'}</div>
               </div>
 
+              <div className="form-group">
+                <label className="form-label">
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Lock size={13} /> Password (optional)
+                  </span>
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showUploadPassword ? 'text' : 'password'}
+                    className="form-input"
+                    placeholder="Leave empty for no password"
+                    value={uploadPassword}
+                    onChange={(e) => setUploadPassword(e.target.value)}
+                    style={{ paddingRight: '40px' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowUploadPassword(!showUploadPassword)}
+                    style={{
+                      position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                      background: 'none', border: 'none', color: 'var(--text-secondary)',
+                      cursor: 'pointer', padding: '2px', display: 'flex'
+                    }}
+                  >
+                    {showUploadPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
               {error && (
                 <div style={{ color: 'var(--error)', marginBottom: '15px', padding: '10px', background: 'rgba(231, 76, 60, 0.1)', borderRadius: '6px' }}>
                   {error}
@@ -119,6 +210,11 @@ function Drop({ sessionId }) {
                 }}>
                   <div style={{ marginBottom: '8px', fontWeight: '500', color: 'var(--success)', display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <CheckCircle size={16} /> File uploaded successfully!
+                    {createdDrop.hasPassword && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', opacity: 0.8 }}>
+                        <Lock size={12} /> Password protected
+                      </span>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     <code style={{
@@ -174,14 +270,17 @@ function Drop({ sessionId }) {
                     return (
                       <tr key={drop.token}>
                         <td>
-                          <code style={{
-                            background: 'var(--bg-tertiary)',
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '12px'
-                          }}>
-                            {drop.token}
-                          </code>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <code style={{
+                              background: 'var(--bg-tertiary)',
+                              padding: '4px 8px',
+                              borderRadius: '4px',
+                              fontSize: '12px'
+                            }}>
+                              {drop.token}
+                            </code>
+                            {drop.hasPassword && <Lock size={12} color="var(--warning)" title="Password protected" />}
+                          </div>
                         </td>
                         <td>
                           <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block' }}>
@@ -202,19 +301,17 @@ function Drop({ sessionId }) {
                             <span className="status-badge status-expired"><Clock size={12} /> Expired</span>
                           ) : (
                             <div style={{ display: 'flex', gap: '5px' }}>
-                              <a
-                                href={getDropUrl(drop.token)}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <button
                                 className="btn btn-success btn-sm"
+                                onClick={() => handleDownload(drop)}
                               >
-                                <Download size={14} /> Download
-                              </a>
+                                <Download size={14} />
+                              </button>
                               <button
                                 className="btn btn-secondary btn-sm"
                                 onClick={() => copyToClipboard(`${getBaseUrl()}/d/${drop.token}`)}
                               >
-                                <Copy size={14} /> Copy
+                                <Copy size={14} />
                               </button>
                             </div>
                           )}
@@ -236,6 +333,47 @@ function Drop({ sessionId }) {
           )}
         </div>
       </div>
+
+      {/* Password Modal */}
+      {passwordModal && (
+        <div className="modal-overlay" onClick={() => setPasswordModal(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '380px' }}>
+            <div className="modal-header">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <KeyRound size={18} /> Password Required
+              </h3>
+              <button className="btn-icon" onClick={() => setPasswordModal(null)}>
+                <XCircle size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: '12px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                This file is protected. Enter the password to download.
+              </div>
+              <form onSubmit={(e) => { e.preventDefault(); handlePasswordDownload(); }}>
+                <div className="form-group">
+                  <input
+                    type="password"
+                    className="form-input"
+                    placeholder="Enter password"
+                    value={downloadPassword}
+                    onChange={(e) => { setDownloadPassword(e.target.value); setDownloadError(''); }}
+                    autoFocus
+                  />
+                </div>
+                {downloadError && (
+                  <div style={{ color: 'var(--error)', fontSize: '12px', marginBottom: '10px', padding: '8px', background: 'rgba(231, 76, 60, 0.1)', borderRadius: '6px' }}>
+                    {downloadError}
+                  </div>
+                )}
+                <button type="submit" className="btn btn-primary" disabled={downloading || !downloadPassword.trim()} style={{ width: '100%' }}>
+                  {downloading ? 'Downloading...' : <><Download size={14} style={{ marginRight: '6px' }} /> Download</>}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast */}
       {toast && (

@@ -1,12 +1,18 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { statements, DATA_DIR } = require('../db/database');
 
-// Configure multer for drops
+function setContentDisposition(res, filename) {
+  const encoded = encodeURIComponent(filename).replace(/['()]/g, escape);
+  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_');
+  res.setHeader('Content-Disposition', `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`);
+}
+
 const dropsDir = path.join(DATA_DIR, 'drops');
 if (!fs.existsSync(dropsDir)) {
   fs.mkdirSync(dropsDir, { recursive: true });
@@ -25,15 +31,31 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 * 1024 } });
 
-// Size limit middleware — unlimited for admin, 50MB for guests
 const dropSizeLimit = (req, res, next) => {
-  if (req.isAdmin) return next(); // no limit
+  if (req.isAdmin) return next();
   const MAX_GUEST = 50 * 1024 * 1024;
   if (req.headers['content-length'] && parseInt(req.headers['content-length']) > MAX_GUEST) {
     return res.status(413).json({ error: `File too large. Guest limit is 50MB.` });
   }
   next();
 };
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(password, salt, 64);
+  return salt.toString('hex') + ':' + hash.toString('hex');
+}
+
+function verifyPassword(password, stored) {
+  if (!stored) return false;
+  const [saltHex, hashHex] = stored.split(':');
+  if (!saltHex || !hashHex) return false;
+  const salt = Buffer.from(saltHex, 'hex');
+  const hash = crypto.scryptSync(password, salt, 64);
+  const expected = Buffer.from(hashHex, 'hex');
+  if (hash.length !== expected.length) return false;
+  return crypto.timingSafeEqual(hash, expected);
+}
 
 // POST /api/drop/upload - upload a drop file
 router.post('/upload', dropSizeLimit, upload.single('file'), (req, res) => {
@@ -52,13 +74,16 @@ router.post('/upload', dropSizeLimit, upload.single('file'), (req, res) => {
       expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     }
 
-    statements.createDrop.run(token, req.file.originalname, relativePath, req.file.size, createdAt, expiresAt, sessionId);
+    const rawPassword = (req.body.password || '').trim();
+    const password = rawPassword ? hashPassword(rawPassword) : null;
+
+    statements.createDrop.run(token, req.file.originalname, relativePath, req.file.size, createdAt, expiresAt, sessionId, password);
 
     const protocol = req.protocol;
     const host = req.get('host');
     const url = `${protocol}://${host}/d/${token}`;
 
-    res.json({ token, url });
+    res.json({ token, url, hasPassword: !!password });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -77,7 +102,11 @@ router.get('/list', (req, res) => {
     } else {
       drops = [];
     }
-    res.json(drops);
+    const safe = drops.map(d => {
+      const { password, ...rest } = d;
+      return { ...rest, hasPassword: !!password };
+    });
+    res.json(safe);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -92,8 +121,7 @@ router.delete('/:token', (req, res) => {
     const { token } = req.params;
     const drop = statements.getDrop.get(token);
     if (drop && drop.path) {
-      const fs = require('fs');
-      const fullPath = require('path').join(require('../db/database').DATA_DIR, drop.path);
+      const fullPath = path.join(DATA_DIR, drop.path);
       if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
     }
     statements.deleteDrop.run(token);
@@ -103,8 +131,8 @@ router.delete('/:token', (req, res) => {
   }
 });
 
-// Download handler - exported separately
-const downloadHandler = (req, res) => {
+// GET /api/drop/:token/download - download file (no password support — redirect or block)
+router.get('/:token/download', (req, res) => {
   try {
     const { token } = req.params;
     const drop = statements.getDrop.get(token);
@@ -117,6 +145,10 @@ const downloadHandler = (req, res) => {
       return res.status(410).json({ error: 'This file has expired and is no longer available.' });
     }
 
+    if (drop.password && !req.isAdmin) {
+      return res.status(403).json({ error: 'Password required', requiresPassword: true });
+    }
+
     const filePath = path.join(DATA_DIR, drop.path);
 
     if (!fs.existsSync(filePath)) {
@@ -124,16 +156,55 @@ const downloadHandler = (req, res) => {
     }
 
     statements.incrementDownloads.run(token);
-    res.setHeader('Content-Disposition', `attachment; filename="${drop.filename}"`);
+    setContentDisposition(res, drop.filename);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.download(filePath, drop.filename);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-};
+});
 
-// GET /api/drop/:token/download - download file
-router.get('/:token/download', downloadHandler);
+// POST /api/drop/:token/download - download file with password
+router.post('/:token/download', express.json(), (req, res) => {
+  try {
+    const { token } = req.params;
+    const drop = statements.getDrop.get(token);
+
+    if (!drop) {
+      return res.status(404).json({ error: 'Drop not found' });
+    }
+
+    if (drop.deleted) {
+      return res.status(410).json({ error: 'This file has expired and is no longer available.' });
+    }
+
+    if (!drop.password) {
+      return res.status(400).json({ error: 'This file does not require a password' });
+    }
+
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
+    }
+
+    if (!verifyPassword(password, drop.password)) {
+      return res.status(403).json({ error: 'Wrong password' });
+    }
+
+    const filePath = path.join(DATA_DIR, drop.path);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    statements.incrementDownloads.run(token);
+    setContentDisposition(res, drop.filename);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.download(filePath, drop.filename);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/drop/:token/info - get file info for preview
 router.get('/:token/info', (req, res) => {
@@ -152,7 +223,8 @@ router.get('/:token/info', (req, res) => {
       downloads: drop.downloads,
       createdAt: drop.createdAt,
       expiresAt: drop.expiresAt,
-      deleted: drop.deleted
+      deleted: drop.deleted,
+      hasPassword: !!drop.password
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

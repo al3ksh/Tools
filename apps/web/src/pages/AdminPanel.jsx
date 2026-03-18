@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { api, formatDate, formatBytes, getFileUrl, getDropUrl } from '../api';
 import {
     Shield, Download, FileAudio, Link as LinkIcon, FolderOpen,
-    Trash2, Copy, ExternalLink, CheckCircle, XCircle, HardDrive, Database, FileDown, ArrowUpFromLine, PackageOpen
+    Trash2, Copy, ExternalLink, CheckCircle, XCircle, HardDrive, Database, FileDown, ArrowUpFromLine, PackageOpen, Lock
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import EmptyState from '../components/EmptyState';
@@ -257,6 +257,7 @@ function AdminPanel() {
                                             <th>Filename</th>
                                             <th>Size</th>
                                             <th>Downloads</th>
+                                            <th>Password</th>
                                             <th>Session</th>
                                             <th>Expires</th>
                                             <th>Created</th>
@@ -273,6 +274,15 @@ function AdminPanel() {
                                                     </td>
                                                     <td>{formatBytes(drop.size)}</td>
                                                     <td>{drop.downloads}</td>
+                                                    <td>
+                                                        {drop.hasPassword ? (
+                                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--warning)', fontSize: '12px' }}>
+                                                                <Lock size={12} /> Yes
+                                                            </span>
+                                                        ) : (
+                                                            <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>No</span>
+                                                        )}
+                                                    </td>
                                                     <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                                                         {drop.sessionId === 'admin' ? (
                                                             <span style={{ color: 'var(--accent)', fontWeight: '500' }}>admin</span>
