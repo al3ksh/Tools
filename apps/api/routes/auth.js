@@ -14,15 +14,14 @@ const BLOCK_DURATION = 30 * 60 * 1000; // 30 minutes
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 
 function getClientIp(req) {
-    return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.connection.remoteAddress;
+    return req.ip || req.connection.remoteAddress;
 }
 
 function passwordsMatch(input, expected) {
     if (typeof input !== 'string' || typeof expected !== 'string') return false;
-    const inputBuffer = Buffer.from(input);
-    const expectedBuffer = Buffer.from(expected);
-    if (inputBuffer.length !== expectedBuffer.length) return false;
-    return crypto.timingSafeEqual(inputBuffer, expectedBuffer);
+    const inputHash = crypto.createHash('sha256').update(input).digest();
+    const expectedHash = crypto.createHash('sha256').update(expected).digest();
+    return crypto.timingSafeEqual(inputHash, expectedHash);
 }
 
 function getAdminToken(req) {

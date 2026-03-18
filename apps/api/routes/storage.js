@@ -38,6 +38,9 @@ function formatBytes(bytes) {
 // GET /api/storage - storage usage info
 router.get('/', (req, res) => {
   try {
+    if (!req.isAdmin) {
+      return res.status(403).json({ error: 'Admin only' });
+    }
     const dirs = ['downloads', 'converted', 'uploads', 'drops'];
     const storage = {};
     let total = 0;
