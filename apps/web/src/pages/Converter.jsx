@@ -5,6 +5,7 @@ import AudioTrimmer from '../components/AudioTrimmer';
 import Pagination from '../components/Pagination';
 import FileUploader from '../components/FileUploader';
 import useToast from '../hooks/useToast';
+import useConfirm from '../hooks/useConfirm';
 
 function Converter({ sessionId }) {
   const [formData, setFormData] = useState({
@@ -22,6 +23,7 @@ function Converter({ sessionId }) {
   const [wavSrc, setWavSrc] = useState('');
   const audioRef = useRef(null);
   const [toast, showToast] = useToast();
+  const [confirm, ConfirmDialog] = useConfirm();
 
   // Pagination State
   const [allJobsPage, setAllJobsPage] = useState(1);
@@ -376,7 +378,7 @@ function Converter({ sessionId }) {
                               {!job.deleted && (
                                 <button
                                   className="btn btn-secondary btn-sm"
-                                  onClick={() => { if (window.confirm('Delete this conversion?')) handleDelete(job.id); }}
+                                  onClick={() => { confirm('Delete this conversion?').then(yes => { if (yes) handleDelete(job.id); }); }}
                                   style={{ marginLeft: '5px' }}
                                   title="Delete"
                                 >
@@ -402,7 +404,7 @@ function Converter({ sessionId }) {
                           {job.status !== 'done' && job.status !== 'queued' && job.status !== 'running' && job.status !== 'deleted' && (
                             <button
                               className="btn btn-secondary btn-sm"
-                                onClick={() => { if (window.confirm('Delete this conversion?')) handleDelete(job.id); }}
+                                onClick={() => { confirm('Delete this conversion?').then(yes => { if (yes) handleDelete(job.id); }); }}
                               style={{ marginLeft: '5px' }}
                               title="Delete"
                             >
@@ -434,6 +436,8 @@ function Converter({ sessionId }) {
           {toast.type === 'success' ? <CheckCircle size={16} /> : <XCircle size={16} />} {toast.message}
         </div>
       )}
+
+      {ConfirmDialog}
     </>
   );
 }

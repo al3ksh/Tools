@@ -3,6 +3,7 @@ import { api, formatDate, getFileUrl, PRESETS } from '../api';
 import { Download, Film, Clock, List, Settings, CheckCircle, XCircle, Trash2, ClipboardList, Inbox, XSquare, Archive, Link as LinkIcon, Youtube, ImageOff } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import useToast from '../hooks/useToast';
+import useConfirm from '../hooks/useConfirm';
 
 function Downloader({ sessionId }) {
   const [url, setUrl] = useState('');
@@ -11,6 +12,7 @@ function Downloader({ sessionId }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toast, showToast] = useToast();
+  const [confirm, ConfirmDialog] = useConfirm();
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [genericPreview, setGenericPreview] = useState(null);
@@ -347,7 +349,7 @@ function Downloader({ sessionId }) {
                           {job.status !== 'queued' && job.status !== 'running' && job.status !== 'failed' && job.status !== 'expired' && job.status !== 'deleted' && (
                             <button
                               className="btn btn-secondary btn-sm"
-                              onClick={() => { if (window.confirm('Delete this download?')) handleDelete(job.id); }}
+                              onClick={() => { confirm('Delete this download?').then(yes => { if (yes) handleDelete(job.id); }); }}
                               style={{ marginLeft: '5px' }}
                               title="Delete"
                             >
@@ -381,6 +383,7 @@ function Downloader({ sessionId }) {
           </div>
         )
       }
+      {ConfirmDialog}
     </>
   );
 }

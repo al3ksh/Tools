@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import useToast from '../hooks/useToast';
+import useConfirm from '../hooks/useConfirm';
 
 const STATUS_ICONS = {
     queued: <Clock size={14} />,
@@ -23,6 +24,7 @@ function AdminPanel() {
     const [drops, setDrops] = useState([]);
     const [links, setLinks] = useState([]);
     const [toast, showToast] = useToast();
+    const [confirm, ConfirmDialog] = useConfirm();
 
     // Pagination
     const [jobsPage, setJobsPage] = useState(1);
@@ -211,7 +213,7 @@ function AdminPanel() {
                                                         {job.status !== 'deleted' && (
                                                             <button
                                                                 className="btn btn-secondary btn-sm"
-                                                                 onClick={() => { if (window.confirm('Delete this job?')) handleDeleteJob(job.id); }}
+                                                                 onClick={() => { confirm('Delete this job?').then(yes => { if (yes) handleDeleteJob(job.id); }); }}
                                                                 title="Delete"
                                                                 style={{ color: 'var(--error)' }}
                                                             >
@@ -310,7 +312,7 @@ function AdminPanel() {
                                                             </button>
                                                             <button
                                                                 className="btn btn-secondary btn-sm"
-                                                                 onClick={() => { if (window.confirm('Delete this file?')) handleDeleteDrop(drop.token); }}
+                                                                 onClick={() => { confirm('Delete this file?').then(yes => { if (yes) handleDeleteDrop(drop.token); }); }}
                                                                 title="Delete"
                                                                 style={{ color: 'var(--error)' }}
                                                             >
@@ -407,7 +409,7 @@ function AdminPanel() {
                                                         </button>
                                                         <button
                                                             className="btn btn-secondary btn-sm"
-                                                            onClick={() => { if (window.confirm('Delete this link?')) handleDeleteLink(link.slug); }}
+                                                            onClick={() => { confirm('Delete this link?').then(yes => { if (yes) handleDeleteLink(link.slug); }); }}
                                                             title="Delete"
                                                             style={{ color: 'var(--error)' }}
                                                         >
@@ -439,6 +441,8 @@ function AdminPanel() {
                     {toast.type === 'success' ? <CheckCircle size={16} /> : <XCircle size={16} />} {toast.message}
                 </div>
             )}
+
+            {ConfirmDialog}
         </>
     );
 }
