@@ -5,6 +5,7 @@ RUN apk add --no-cache \
     python3 \
     py3-pip \
     ffmpeg \
+    su-exec \
     make \
     g++ \
     gcc \
@@ -28,9 +29,12 @@ RUN apk del make g++ gcc musl-dev
 COPY apps/worker ./apps/worker
 COPY packages/shared ./packages/shared
 
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 WORKDIR /app/apps/worker
 
-# Create data directory
 RUN mkdir -p /data
 
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["npm", "start"]

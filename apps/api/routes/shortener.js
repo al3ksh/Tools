@@ -12,6 +12,10 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'URL is required' });
     }
 
+    if (!/^https?:\/\//i.test(url)) {
+      return res.status(400).json({ error: 'URL must start with http:// or https://' });
+    }
+
     const finalSlug = slug || uuidv4().substring(0, 8);
     const createdAt = new Date().toISOString();
 
@@ -79,6 +83,10 @@ const redirectHandler = (req, res) => {
 
     if (!link) {
       return res.status(404).json({ error: 'Short link not found' });
+    }
+
+    if (!/^https?:\/\//i.test(link.targetUrl)) {
+      return res.status(400).json({ error: 'Invalid redirect URL' });
     }
 
     statements.incrementClicks.run(slug);

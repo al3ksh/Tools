@@ -23,7 +23,7 @@ RUN apk add --no-cache \
     python3 \
     py3-pip \
     ffmpeg \
-    curl \
+    su-exec \
     make \
     g++ \
     gcc \
@@ -47,10 +47,14 @@ COPY packages/shared ./packages/shared
 # Copy web build
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
 
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
 WORKDIR /app/apps/api
 
 RUN mkdir -p /data
 
 EXPOSE 3001
 
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["npm", "start"]

@@ -8,6 +8,15 @@ const DATA_DIR = process.env.DATA_DIR || '/data';
 const DB_PATH = path.join(DATA_DIR, 'tools.db');
 const POLL_INTERVAL = 1000;
 
+function safePath(baseDir, relativePath) {
+  const resolved = path.resolve(baseDir, relativePath);
+  const normalizedBase = path.resolve(baseDir);
+  if (!resolved.startsWith(normalizedBase + path.sep) && resolved !== normalizedBase) {
+    throw new Error('Invalid path: traversal detected');
+  }
+  return resolved;
+}
+
 // Ensure directories exist
 ['downloads', 'converted', 'uploads'].forEach(dir => {
   const dirPath = path.join(DATA_DIR, dir);
@@ -57,19 +66,16 @@ async function processDownloadJob(job) {
   const { url, preset, presetConfig, isAdmin } = input;
   const jobId = job.id;
 
-  const outputDir = path.join(DATA_DIR, 'downloads', jobId);
-  fs.mkdirSync(outputDir, { recursive: true });
+  const outputDir = safePath(DATA_DIR, 'downloads');
+  fs.mkdirSync(path.join(outputDir, jobId), { recursive: true });
+  const outputTemplate = path.join(outputDir, jobId, '%(extractor)s_%(uploader)s_%(upload_date)s_%(title)s_%(id)s.%(ext)s');
 
-  // Build yt-dlp command
   const args = [
     '--no-playlist',
     '--no-warnings',
-    '--newline', // For easier parsing
+    '--newline',
+    '-o', outputTemplate,
   ];
-
-  // Output template
-  const outputTemplate = path.join(outputDir, '%(extractor)s_%(uploader)s_%(upload_date)s_%(title)s_%(id)s.%(ext)s');
-  args.push('-o', outputTemplate);
 
   // Preset-specific options
   if (presetConfig.extractAudio) {
@@ -122,8 +128,8 @@ async function processDownloadJob(job) {
       } else if (code === 0) {
         try {
           // List created files
-          const files = fs.readdirSync(outputDir).map(filename => {
-            const filePath = path.join(outputDir, filename);
+          const files = fs.readdirSync(path.join(outputDir, jobId)).map(filename => {
+            const filePath = path.join(outputDir, jobId, filename);
             const stat = fs.statSync(filePath);
             return {
               filename,
@@ -160,10 +166,9 @@ async function processConvertJob(job) {
 
   let inputPath;
   if (source.type === 'upload') {
-    // source.path is already relative to DATA_DIR (e.g., "uploads/2026-02-23/file.flac")
-    inputPath = path.join(DATA_DIR, source.path);
+    inputPath = safePath(DATA_DIR, source.path);
   } else if (source.type === 'path') {
-    inputPath = path.join(DATA_DIR, source.path);
+    inputPath = safePath(DATA_DIR, source.path);
   } else {
     throw new Error('Invalid source type');
   }
@@ -172,7 +177,7 @@ async function processConvertJob(job) {
     throw new Error(`Input file not found: ${inputPath}`);
   }
 
-  const outputDir = path.join(DATA_DIR, 'converted', jobId);
+  const outputDir = safePath(DATA_DIR, path.join('converted', String(jobId)));
   fs.mkdirSync(outputDir, { recursive: true });
 
   const outputExt = options.format;
@@ -317,7 +322,7 @@ async function cleanupExpiredJobs() {
       console.log(`Expiring drop ${drop.token}`);
       db.prepare(`UPDATE drops SET deleted = 1 WHERE token = ?`).run(drop.token);
 
-      const dropPath = path.join(DATA_DIR, drop.path);
+      const dropPath = safePath(DATA_DIR, drop.path);
       if (fs.existsSync(dropPath)) {
         try {
           fs.unlinkSync(dropPath);
