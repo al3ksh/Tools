@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { api, formatDate, getFileUrl, PRESETS } from '../api';
-import { Download, Film, Clock, List, Settings, CheckCircle, XCircle, Trash2, ClipboardList, Inbox, XSquare, Archive, Link as LinkIcon, Youtube, ImageOff } from 'lucide-react';
+import { Download, Film, Clock, List, CheckCircle, XCircle, Trash2, ClipboardList, Inbox, XSquare, Link as LinkIcon, Youtube, ImageOff } from 'lucide-react';
+import StatusBadge from '../components/StatusBadge';
+import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import useToast from '../hooks/useToast';
 import useConfirm from '../hooks/useConfirm';
@@ -259,11 +261,7 @@ function Downloader({ sessionId }) {
           </div>
           <div className="table-container">
             {jobs.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon"><Inbox size={64} style={{ margin: '0 auto' }} /></div>
-                <div className="empty-title">No downloads yet</div>
-                <p>Paste a URL above to start downloading</p>
-              </div>
+              <EmptyState icon={Inbox} title="No downloads yet" description="Paste a URL above to start downloading" />
             ) : (
               <table style={{ tableLayout: 'fixed' }}>
                 <colgroup>
@@ -301,14 +299,7 @@ function Downloader({ sessionId }) {
                           </span>
                         </td>
                         <td>
-                          <span className={`status-badge status-${job.status}`}>
-                            {job.status === 'queued' && <Clock size={14} />}
-                            {job.status === 'running' && <Settings size={14} className="spin" />}
-                            {job.status === 'done' && <CheckCircle size={14} />}
-                            {job.status === 'failed' && <XCircle size={14} />}
-                            {job.status === 'deleted' && <Archive size={14} />}
-                            {job.status}
-                          </span>
+                          <StatusBadge status={job.status} />
                         </td>
                         <td>
                           <div className="progress-wrapper">

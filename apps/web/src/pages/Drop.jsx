@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api, formatBytes, formatDate, getDropUrl } from '../api';
 import { FolderOpen, Upload, CheckCircle, Copy, Clock, List, Download, ClipboardList, XCircle, FileBox } from 'lucide-react';
+import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import FileUploader from '../components/FileUploader';
 import useToast from '../hooks/useToast';
@@ -154,11 +155,7 @@ function Drop({ sessionId }) {
           </div>
           <div className="table-container">
             {drops.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon"><FileBox size={64} style={{ margin: '0 auto' }} /></div>
-                <div className="empty-title">No files yet</div>
-                <p>Upload your first file above</p>
-              </div>
+              <EmptyState icon={FileBox} title="No files yet" description="Upload your first file above" />
             ) : (
               <table>
                 <thead>

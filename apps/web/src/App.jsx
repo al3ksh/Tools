@@ -13,6 +13,7 @@ import QRCode from './pages/QRCode';
 import PDFEditor from './pages/PDFEditor';
 import GifMaker from './pages/GifMaker';
 import NotFound from './pages/NotFound';
+import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 
 function App() {
@@ -33,8 +34,11 @@ function App() {
 
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme');
-    // Default to dark mode if nothing saved
     return saved !== 'light';
+  });
+
+  const [accentColor, setAccentColor] = useState(() => {
+    return localStorage.getItem('accentColor') || '';
   });
 
 
@@ -128,6 +132,16 @@ function App() {
     }
   }, [isDarkMode]);
 
+  useEffect(() => {
+    if (accentColor) {
+      document.documentElement.style.setProperty('--accent', accentColor);
+      document.documentElement.style.setProperty('--accent-hover', accentColor);
+    } else {
+      document.documentElement.style.removeProperty('--accent');
+      document.documentElement.style.removeProperty('--accent-hover');
+    }
+  }, [accentColor]);
+
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
   return (
@@ -217,6 +231,24 @@ function App() {
                 >
                   {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
                 </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
+                  <div style={{
+                    width: '18px', height: '18px', borderRadius: '50%', border: '2px solid var(--border)',
+                    background: accentColor || 'var(--accent)', cursor: 'pointer', flexShrink: 0,
+                  }} title="Accent color">
+                    <input
+                      type="color"
+                      value={accentColor || '#2c93fa'}
+                      onChange={(e) => {
+                        const c = e.target.value;
+                        setAccentColor(c);
+                        localStorage.setItem('accentColor', c);
+                      }}
+                      style={{ opacity: 0, width: '100%', height: '100%', cursor: 'pointer', padding: 0 }}
+                    />
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Accent</span>
+                </div>
               </div>
               <NavLink
                 to="/privacy"
@@ -232,7 +264,8 @@ function App() {
             </div>
           </aside>
           <main className="main-content">
-            <Routes>
+            <ErrorBoundary>
+              <Routes>
               <Route path="/" element={<Dashboard sessionId={sessionId} />} />
               <Route path="/downloader" element={<Downloader sessionId={sessionId} />} />
               <Route path="/converter" element={<Converter sessionId={sessionId} />} />
@@ -245,7 +278,8 @@ function App() {
               {isAdmin && <Route path="/admin" element={<AdminPanel />} />}
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="*" element={<NotFound />} />
-            </Routes>
+              </Routes>
+            </ErrorBoundary>
           </main>
         </div>
       </BrowserRouter>

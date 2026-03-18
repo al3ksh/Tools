@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { api, formatDate, getFileUrl } from '../api';
-import { RefreshCw, FolderOpen, Upload, CheckCircle, Clock, Settings, AlertTriangle, List, Download, Trash2, ClipboardList, PackageOpen, Volume2, XCircle, XSquare, Archive } from 'lucide-react';
+import { RefreshCw, FolderOpen, Upload, CheckCircle, Clock, Settings, AlertTriangle, List, Download, Trash2, ClipboardList, PackageOpen, Volume2, XCircle, XSquare } from 'lucide-react';
 import AudioTrimmer from '../components/AudioTrimmer';
+import StatusBadge from '../components/StatusBadge';
+import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import FileUploader from '../components/FileUploader';
 import useToast from '../hooks/useToast';
@@ -211,11 +213,7 @@ function Converter({ sessionId }) {
           </div>
           <div className="table-container">
             {jobs.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon"><PackageOpen size={64} style={{ margin: '0 auto' }} /></div>
-                <div className="empty-title">No conversions yet</div>
-                <p>Upload a file to start converting</p>
-              </div>
+              <EmptyState icon={PackageOpen} title="No conversions yet" description="Upload a file to start converting" />
             ) : (
               <table>
                 <thead>
@@ -241,14 +239,7 @@ function Converter({ sessionId }) {
                         <td>{(input.options?.format || input.format || '-').toUpperCase()}</td>
                         <td>{input.options ? (input.options.normalize?.enabled ? `${input.options.normalize.targetLufs} LUFS` : 'None') : (input.preset || '-')}</td>
                         <td>
-                          <span className={`status-badge status-${job.status}`}>
-                            {job.status === 'queued' && <Clock size={14} />}
-                            {job.status === 'running' && <Settings size={14} className="spin" />}
-                            {job.status === 'done' && <CheckCircle size={14} />}
-                            {job.status === 'failed' && <XCircle size={14} />}
-                            {job.status === 'deleted' && <Archive size={14} />}
-                            {job.status}
-                          </span>
+                          <StatusBadge status={job.status} />
                         </td>
                         <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
                           {formatDate(job.createdAt)}

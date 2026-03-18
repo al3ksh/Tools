@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api, formatDate } from '../api';
 import { Link as LinkIcon, Sparkles, CheckCircle, Copy, Clock, List, XCircle } from 'lucide-react';
+import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import useToast from '../hooks/useToast';
 
@@ -159,11 +160,7 @@ function Shortener({ sessionId }) {
           </div>
           <div className="table-container">
             {links.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon"><LinkIcon size={64} style={{ margin: '0 auto' }} /></div>
-                <div className="empty-title">No links yet</div>
-                <p>Create your first short link above</p>
-              </div>
+              <EmptyState icon={LinkIcon} title="No links yet" description="Create your first short link above" />
             ) : (
               <table>
                 <thead>

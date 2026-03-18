@@ -2,21 +2,13 @@ import { useState, useEffect } from 'react';
 import { api, formatDate, formatBytes, getFileUrl, getDropUrl } from '../api';
 import {
     Shield, Download, FileAudio, Link as LinkIcon, FolderOpen,
-    Trash2, RefreshCw, Copy, ExternalLink, CheckCircle, XCircle,
-    Clock, AlertTriangle, Archive
+    Trash2, Copy, ExternalLink, CheckCircle, XCircle
 } from 'lucide-react';
+import StatusBadge from '../components/StatusBadge';
+import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import useToast from '../hooks/useToast';
 import useConfirm from '../hooks/useConfirm';
-
-const STATUS_ICONS = {
-    queued: <Clock size={14} />,
-    running: <RefreshCw size={14} className="spin" />,
-    done: <CheckCircle size={14} />,
-    failed: <XCircle size={14} />,
-    expired: <AlertTriangle size={14} />,
-    deleted: <Archive size={14} />,
-};
 
 function AdminPanel() {
     const [activeTab, setActiveTab] = useState('jobs');
@@ -157,9 +149,7 @@ function AdminPanel() {
                         </div>
                         <div className="table-container">
                             {jobs.length === 0 ? (
-                                <div className="empty-state">
-                                    <div className="empty-title">No jobs yet</div>
-                                </div>
+                                <EmptyState title="No jobs yet" />
                             ) : (
                                 <table>
                                     <thead>
@@ -182,9 +172,7 @@ function AdminPanel() {
                                                     </span>
                                                 </td>
                                                 <td>
-                                                    <span className={`status-badge status-${job.status}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                                        {STATUS_ICONS[job.status]} {job.status}
-                                                    </span>
+                                                    <StatusBadge status={job.status} />
                                                 </td>
                                                 <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '12px' }}>
                                                     {job.inputJson?.url || (typeof job.inputJson?.source === 'string' ? job.inputJson.source : job.inputJson?.source?.originalName) || '-'}
@@ -247,9 +235,7 @@ function AdminPanel() {
                         </div>
                         <div className="table-container">
                             {drops.length === 0 ? (
-                                <div className="empty-state">
-                                    <div className="empty-title">No drops yet</div>
-                                </div>
+                                <EmptyState title="No drops yet" />
                             ) : (
                                 <table>
                                     <thead>
@@ -346,9 +332,7 @@ function AdminPanel() {
                         </div>
                         <div className="table-container">
                             {links.length === 0 ? (
-                                <div className="empty-state">
-                                    <div className="empty-title">No links yet</div>
-                                </div>
+                                <EmptyState title="No links yet" />
                             ) : (
                                 <table>
                                     <thead>

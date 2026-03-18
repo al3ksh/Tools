@@ -191,6 +191,16 @@ async function processConvertJob(job) {
   const outputExt = options.format;
   const outputPath = path.join(outputDir, `output.${outputExt}`);
 
+  function getAudioDuration(filePath) {
+    try {
+      const { execSync } = require('child_process');
+      const out = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${filePath}"`, { encoding: 'utf8' }).trim();
+      return parseFloat(out) || 0;
+    } catch (e) { return 0; }
+  }
+
+  const inputDuration = getAudioDuration(inputPath);
+
   // Build ffmpeg command
   const args = ['-i', inputPath];
 
@@ -229,9 +239,19 @@ async function processConvertJob(job) {
     }, MAX_PROCESS_TIME);
 
     ffmpeg.stderr.on('data', (data) => {
-      logsTail = logsTail + data.toString();
+      const text = data.toString();
+      logsTail = logsTail + text;
       if (logsTail.length > 5000) {
         logsTail = logsTail.slice(-5000);
+      }
+
+      if (inputDuration > 0) {
+        const timeMatch = text.match(/time=(\d+):(\d+):(\d+)\.(\d+)/);
+        if (timeMatch) {
+          const current = parseInt(timeMatch[1]) * 3600 + parseInt(timeMatch[2]) * 60 + parseInt(timeMatch[3]) + parseInt(timeMatch[4]) / 100;
+          const progress = Math.min(Math.round((current / inputDuration) * 100), 100);
+          db.prepare('UPDATE jobs SET progress = ? WHERE id = ?').run(progress, jobId);
+        }
       }
     });
 
