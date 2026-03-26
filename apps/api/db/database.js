@@ -226,8 +226,8 @@ const statements = {
 
   // Clips
   createClip: db.prepare(`
-    INSERT INTO clips (token, filename, path, size, duration, width, height, fps, bitrate, videoCodec, audioCodec, downloads, createdAt, expiresAt, deleted, sessionId)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?)
+    INSERT INTO clips (token, filename, path, size, duration, width, height, fps, bitrate, videoCodec, audioCodec, createdAt, expiresAt, sessionId)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `),
 
   getClip: db.prepare(`
