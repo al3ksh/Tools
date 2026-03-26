@@ -81,6 +81,19 @@ try {
     db.exec('ALTER TABLE shortlinks ADD COLUMN sessionId TEXT');
     console.log('Migration: Added sessionId column to shortlinks');
   }
+
+  // Clips table migration
+  const clipColumns = db.prepare("PRAGMA table_info(clips)").all();
+  const clipColumnNames = clipColumns.map(c => c.name);
+  if (clipColumnNames.length > 0) {
+    const clipMetaCols = ['width', 'height', 'fps', 'bitrate', 'videoCodec', 'audioCodec'];
+    for (const col of clipMetaCols) {
+      if (!clipColumnNames.includes(col)) {
+        db.exec(`ALTER TABLE clips ADD COLUMN ${col} ${col === 'fps' ? 'REAL' : col === 'bitrate' ? 'INTEGER' : 'TEXT'}`);
+        console.log(`Migration: Added ${col} column to clips`);
+      }
+    }
+  }
 } catch (err) {
   console.error('Migration error:', err);
 }
@@ -209,6 +222,40 @@ const statements = {
 
   deleteDrop: db.prepare(`
     DELETE FROM drops WHERE token = ?
+  `),
+
+  // Clips
+  createClip: db.prepare(`
+    INSERT INTO clips (token, filename, path, size, duration, width, height, fps, bitrate, videoCodec, audioCodec, downloads, createdAt, expiresAt, deleted, sessionId)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, ?)
+  `),
+
+  getClip: db.prepare(`
+    SELECT * FROM clips WHERE token = ?
+  `),
+
+  getAllClips: db.prepare(`
+    SELECT * FROM clips WHERE deleted = 0 ORDER BY createdAt DESC
+  `),
+
+  getClipsBySession: db.prepare(`
+    SELECT * FROM clips WHERE sessionId = ? AND deleted = 0 ORDER BY createdAt DESC
+  `),
+
+  incrementClipViews: db.prepare(`
+    UPDATE clips SET downloads = downloads + 1 WHERE token = ?
+  `),
+
+  expireClip: db.prepare(`
+    UPDATE clips SET deleted = 1 WHERE token = ?
+  `),
+
+  deleteClip: db.prepare(`
+    UPDATE clips SET deleted = 1 WHERE token = ?
+  `),
+
+  getExpiredClips: db.prepare(`
+    SELECT * FROM clips WHERE deleted = 0 AND expiresAt < ?
   `)
 };
 

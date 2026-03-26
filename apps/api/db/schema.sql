@@ -39,6 +39,26 @@ CREATE TABLE IF NOT EXISTS drops (
   sessionId TEXT
 );
 
+-- Clips table
+CREATE TABLE IF NOT EXISTS clips (
+  token TEXT PRIMARY KEY,
+  filename TEXT NOT NULL,
+  path TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  duration REAL,
+  width INTEGER,
+  height INTEGER,
+  fps REAL,
+  bitrate INTEGER,
+  videoCodec TEXT,
+  audioCodec TEXT,
+  downloads INTEGER DEFAULT 0,
+  createdAt TEXT NOT NULL,
+  expiresAt TEXT,
+  deleted INTEGER DEFAULT 0,
+  sessionId TEXT
+);
+
 -- Index for faster polling
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, createdAt);
 CREATE INDEX IF NOT EXISTS idx_jobs_expires ON jobs(expiresAt, status);
@@ -48,3 +68,4 @@ CREATE INDEX IF NOT EXISTS idx_jobs_cancelling ON jobs(isCancelling);
 CREATE INDEX IF NOT EXISTS idx_drops_session ON drops(sessionId);
 CREATE INDEX IF NOT EXISTS idx_drops_expires ON drops(expiresAt);
 CREATE INDEX IF NOT EXISTS idx_shortlinks_session ON shortlinks(sessionId);
+CREATE INDEX IF NOT EXISTS idx_clips_expires ON clips(expiresAt, deleted);

@@ -5,29 +5,22 @@ const getAuthHeaders = () => {
 };
 
 async function fetchApi(endpoint, options = {}) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
-  try {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      signal: controller.signal,
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-        ...options.headers,
-      },
-    });
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+      ...options.headers,
+    },
+  });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }));
-      throw new Error(error.error || 'Request failed');
-    }
-
-    return response.json();
-  } finally {
-    clearTimeout(timeoutId);
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(error.error || 'Request failed');
   }
+
+  return response.json();
 }
 
 export const api = {
@@ -94,45 +87,6 @@ export const api = {
 
   getDrops: (sessionId) => fetchApi(`/drop/list${sessionId ? `?sessionId=${sessionId}` : ''}`),
   getDropInfo: (token) => fetchApi(`/drop/${token}/info`),
-  downloadDrop: async (token, password) => {
-    if (password) {
-      const response = await fetch(`${API_BASE}/drop/${token}/download`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      });
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Download failed' }));
-        throw new Error(error.error || 'Download failed');
-      }
-      const blob = await response.blob();
-      const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = 'download';
-      if (contentDisposition) {
-        const match = contentDisposition.match(/filename="?([^";\n]+)"?/);
-        if (match) filename = match[1];
-      }
-      return { blob, filename };
-    }
-    const response = await fetch(`${API_BASE}/drop/${token}/download`, {
-      credentials: 'include',
-      headers: getAuthHeaders(),
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Download failed' }));
-      if (error.requiresPassword) throw new Error('PASSWORD_REQUIRED');
-      throw new Error(error.error || 'Download failed');
-    }
-    const blob = await response.blob();
-    const contentDisposition = response.headers.get('Content-Disposition');
-    let filename = 'download';
-    if (contentDisposition) {
-      const match = contentDisposition.match(/filename="?([^";\n]+)"?/);
-      if (match) filename = match[1];
-    }
-    return { blob, filename };
-  },
 
   // Storage
   getStorage: () => fetchApi('/storage'),
@@ -305,6 +259,12 @@ export const api = {
   getAllShortlinks: () => fetchApi('/shortlinks/list?all=true'),
   deleteShortlink: (slug) => fetchApi(`/shortlinks/${slug}`, { method: 'DELETE' }),
   deleteDrop: (token) => fetchApi(`/drop/${token}`, { method: 'DELETE' }),
+
+  // Clips
+  getClips: (sessionId) => fetchApi(`/clip/list${sessionId ? `?sessionId=${sessionId}` : ''}`),
+  getClipInfo: (token) => fetchApi(`/clip/${token}/info`),
+  getAllClips: () => fetchApi('/clip/list?all=true'),
+  deleteClip: (token) => fetchApi(`/clip/${token}`, { method: 'DELETE' }),
 };
 
 export const formatBytes = (bytes) => {
@@ -334,6 +294,75 @@ export const getFileUrl = (jobId, filename = null) => {
   return `/api/files/${jobId}/${encodeURIComponent(filename)}`;
 };
 export const getDropUrl = (token) => `/api/drop/${token}/download`;
+
+export const getClipUrl = (token) => `/c/${token}`;
+
+export const getClipStreamUrl = (token) => `/api/clip/${token}/stream`;
+
+export const getClipEmbedUrl = (token) => `/c/${token}/embed`;
+
+const CHUNK_SIZE = 5 * 1024 * 1024;
+
+export async function chunkedUpload(file, sessionId, trimOptions, onProgress) {
+  const uploadId = crypto.randomUUID();
+
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  let uploadedChunks = 0;
+
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE - 1, file.size - 1);
+    const blob = file.slice(start, end + 1);
+
+    const response = await fetch(`${API_BASE}/clip/upload-chunk`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'X-Upload-Id': uploadId,
+        'Content-Range': `bytes ${start}-${end}/${file.size}`,
+      },
+      body: blob,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(error.error || 'Upload failed');
+    }
+
+    uploadedChunks++;
+    if (onProgress) {
+      const percent = Math.round((uploadedChunks / totalChunks) * 100);
+      const remaining = totalChunks - uploadedChunks;
+      onProgress({ percent, uploaded: uploadedChunks, total: totalChunks, remaining });
+    }
+  }
+
+  const body = {
+    uploadId,
+    filename: file.name,
+    sessionId,
+  };
+
+  if (trimOptions) {
+    body.trimStart = trimOptions.trimStart;
+    body.trimEnd = trimOptions.trimEnd;
+    body.duration = trimOptions.duration;
+  }
+
+  const finalizeResponse = await fetch(`${API_BASE}/clip/finalize`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!finalizeResponse.ok) {
+    const error = await finalizeResponse.json().catch(() => ({ error: 'Finalize failed' }));
+    throw new Error(error.error || 'Finalize failed');
+  }
+
+  return finalizeResponse.json();
+}
 
 export const PRESETS = [
   { value: 'VIDEO_MP4_BEST', label: 'Video MP4 - Best Quality' },

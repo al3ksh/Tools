@@ -1,57 +1,60 @@
 import { useState, useEffect } from 'react';
-import { api, formatDate, formatBytes, getFileUrl, getDropUrl } from '../api';
+import { api, formatDate, formatBytes, getFileUrl, getDropUrl, getClipUrl } from '../api';
 import {
     Shield, Download, FileAudio, Link as LinkIcon, FolderOpen,
-    Trash2, Copy, ExternalLink, CheckCircle, XCircle, HardDrive, Database, FileDown, ArrowUpFromLine, PackageOpen, Lock
+    Trash2, RefreshCw, Copy, ExternalLink, CheckCircle, XCircle,
+    Clock, AlertTriangle, Archive, Film
 } from 'lucide-react';
-import StatusBadge from '../components/StatusBadge';
-import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
-import useToast from '../hooks/useToast';
-import useConfirm from '../hooks/useConfirm';
+
+const STATUS_ICONS = {
+    queued: <Clock size={14} />,
+    running: <RefreshCw size={14} className="spin" />,
+    done: <CheckCircle size={14} />,
+    failed: <XCircle size={14} />,
+    expired: <AlertTriangle size={14} />,
+    deleted: <Archive size={14} />,
+};
 
 function AdminPanel() {
     const [activeTab, setActiveTab] = useState('jobs');
     const [jobs, setJobs] = useState([]);
     const [drops, setDrops] = useState([]);
     const [links, setLinks] = useState([]);
-    const [storage, setStorage] = useState(null);
-    const [toast, showToast] = useToast();
-    const [confirm, ConfirmDialog] = useConfirm();
+    const [clips, setClips] = useState([]);
+    const [toast, setToast] = useState(null);
 
     // Pagination
     const [jobsPage, setJobsPage] = useState(1);
     const [dropsPage, setDropsPage] = useState(1);
     const [linksPage, setLinksPage] = useState(1);
+    const [clipsPage, setClipsPage] = useState(1);
     const ITEMS_PER_PAGE = 15;
+
+    const showToast = (message, type = 'success') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 3000);
+    };
 
     const fetchAll = async () => {
         try {
-            const [j, d, l] = await Promise.all([
+            const [j, d, l, c] = await Promise.all([
                 api.getAllJobs(),
                 api.getAllDrops(),
                 api.getAllShortlinks(),
+                api.getAllClips(),
             ]);
             setJobs(j);
             setDrops(d);
             setLinks(l);
+            setClips(c);
         } catch (err) {
             console.error('Admin fetch error:', err);
         }
     };
 
-    const fetchStorage = async () => {
-        try {
-            const data = await api.getStorage();
-            setStorage(data);
-        } catch (err) {
-            console.error('Storage fetch error:', err);
-        }
-    };
-
     useEffect(() => {
         fetchAll();
-        fetchStorage();
         const interval = setInterval(fetchAll, 5000);
         return () => clearInterval(interval);
     }, []);
@@ -86,6 +89,16 @@ function AdminPanel() {
         }
     };
 
+    const handleDeleteClip = async (token) => {
+        try {
+            await api.deleteClip(token);
+            showToast('Clip deleted');
+            fetchAll();
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    };
+
     const copyToClipboard = (text) => {
         navigator.clipboard.writeText(text);
         showToast('Copied!');
@@ -95,7 +108,7 @@ function AdminPanel() {
         { id: 'jobs', label: 'Jobs', icon: <Download size={16} />, count: jobs.length },
         { id: 'drops', label: 'Drops', icon: <FolderOpen size={16} />, count: drops.length },
         { id: 'links', label: 'Shortlinks', icon: <LinkIcon size={16} />, count: links.length },
-        { id: 'storage', label: 'Storage', icon: <HardDrive size={16} /> },
+        { id: 'clips', label: 'Clips', icon: <Film size={16} />, count: clips.length },
     ];
 
     return (
@@ -141,17 +154,15 @@ function AdminPanel() {
                             }}
                         >
                             {tab.icon} {tab.label}
-                            {tab.count !== undefined && (
                             <span style={{
                                 background: activeTab === tab.id ? 'rgba(255,255,255,0.2)' : 'var(--bg-tertiary)',
                                 padding: '2px 8px',
-                                 borderRadius: '10px',
-                                 fontSize: '11px',
-                             }}>
-                                 {tab.count}
-                             </span>
-                            )}
-                         </button>
+                                borderRadius: '10px',
+                                fontSize: '11px',
+                            }}>
+                                {tab.count}
+                            </span>
+                        </button>
                     ))}
                 </div>
 
@@ -163,7 +174,9 @@ function AdminPanel() {
                         </div>
                         <div className="table-container">
                             {jobs.length === 0 ? (
-                                <EmptyState title="No jobs yet" />
+                                <div className="empty-state">
+                                    <div className="empty-title">No jobs yet</div>
+                                </div>
                             ) : (
                                 <table>
                                     <thead>
@@ -186,7 +199,9 @@ function AdminPanel() {
                                                     </span>
                                                 </td>
                                                 <td>
-                                                    <StatusBadge status={job.status} />
+                                                    <span className={`status-badge status-${job.status}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                        {STATUS_ICONS[job.status]} {job.status}
+                                                    </span>
                                                 </td>
                                                 <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '12px' }}>
                                                     {job.inputJson?.url || (typeof job.inputJson?.source === 'string' ? job.inputJson.source : job.inputJson?.source?.originalName) || '-'}
@@ -215,7 +230,7 @@ function AdminPanel() {
                                                         {job.status !== 'deleted' && (
                                                             <button
                                                                 className="btn btn-secondary btn-sm"
-                                                                 onClick={() => { confirm('Delete this job?').then(yes => { if (yes) handleDeleteJob(job.id); }); }}
+                                                                onClick={() => handleDeleteJob(job.id)}
                                                                 title="Delete"
                                                                 style={{ color: 'var(--error)' }}
                                                             >
@@ -249,7 +264,9 @@ function AdminPanel() {
                         </div>
                         <div className="table-container">
                             {drops.length === 0 ? (
-                                <EmptyState title="No drops yet" />
+                                <div className="empty-state">
+                                    <div className="empty-title">No drops yet</div>
+                                </div>
                             ) : (
                                 <table>
                                     <thead>
@@ -257,7 +274,6 @@ function AdminPanel() {
                                             <th>Filename</th>
                                             <th>Size</th>
                                             <th>Downloads</th>
-                                            <th>Password</th>
                                             <th>Session</th>
                                             <th>Expires</th>
                                             <th>Created</th>
@@ -274,15 +290,6 @@ function AdminPanel() {
                                                     </td>
                                                     <td>{formatBytes(drop.size)}</td>
                                                     <td>{drop.downloads}</td>
-                                                    <td>
-                                                        {drop.hasPassword ? (
-                                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--warning)', fontSize: '12px' }}>
-                                                                <Lock size={12} /> Yes
-                                                            </span>
-                                                        ) : (
-                                                            <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>No</span>
-                                                        )}
-                                                    </td>
                                                     <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                                                         {drop.sessionId === 'admin' ? (
                                                             <span style={{ color: 'var(--accent)', fontWeight: '500' }}>admin</span>
@@ -322,7 +329,7 @@ function AdminPanel() {
                                                             </button>
                                                             <button
                                                                 className="btn btn-secondary btn-sm"
-                                                                 onClick={() => { confirm('Delete this file?').then(yes => { if (yes) handleDeleteDrop(drop.token); }); }}
+                                                                onClick={() => handleDeleteDrop(drop.token)}
                                                                 title="Delete"
                                                                 style={{ color: 'var(--error)' }}
                                                             >
@@ -356,7 +363,9 @@ function AdminPanel() {
                         </div>
                         <div className="table-container">
                             {links.length === 0 ? (
-                                <EmptyState title="No links yet" />
+                                <div className="empty-state">
+                                    <div className="empty-title">No links yet</div>
+                                </div>
                             ) : (
                                 <table>
                                     <thead>
@@ -417,7 +426,7 @@ function AdminPanel() {
                                                         </button>
                                                         <button
                                                             className="btn btn-secondary btn-sm"
-                                                            onClick={() => { confirm('Delete this link?').then(yes => { if (yes) handleDeleteLink(link.slug); }); }}
+                                                            onClick={() => handleDeleteLink(link.slug)}
                                                             title="Delete"
                                                             style={{ color: 'var(--error)' }}
                                                         >
@@ -442,92 +451,98 @@ function AdminPanel() {
                     </div>
                 )}
 
-                {/* Storage Tab */}
-                {activeTab === 'storage' && storage && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        {storage.disk && (
-                            <div className="card">
-                                <div className="card-header">
-                                    <div className="card-title"><HardDrive size={18} /> Disk Usage</div>
-                                </div>
-                                <div className="card-body">
-                                    <div style={{
-                                        height: '24px', borderRadius: '6px', overflow: 'hidden',
-                                        background: 'var(--bg-secondary)', display: 'flex',
-                                    }}>
-                                        <div style={{
-                                            width: `${Math.min(storage.disk.usedPercent, 100)}%`,
-                                            background: storage.disk.usedPercent >= 85 ? 'var(--error)'
-                                                : storage.disk.usedPercent >= 60 ? 'var(--warning)'
-                                                : 'var(--success)',
-                                            borderRadius: '6px',
-                                            transition: 'width 0.5s ease',
-                                        }} />
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', fontSize: '13px' }}>
-                                        <span style={{ color: 'var(--text-secondary)' }}>
-                                            {storage.disk.usedFormatted} used
-                                        </span>
-                                        <span style={{ fontWeight: 600, color: storage.disk.usedPercent >= 85 ? 'var(--error)'
-                                            : storage.disk.usedPercent >= 60 ? 'var(--warning)'
-                                            : 'var(--text-primary)' }}>
-                                            {storage.disk.usedPercent}%
-                                        </span>
-                                        <span style={{ color: 'var(--text-secondary)' }}>
-                                            {storage.disk.availableFormatted} free
-                                        </span>
-                                    </div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', textAlign: 'center' }}>
-                                        Total: {storage.disk.totalFormatted}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        <div style={{
-                            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px',
-                        }}>
-                            {[
-                                { key: 'downloads', label: 'Downloads', icon: <FileDown size={20} />, color: '#3498db' },
-                                { key: 'converted', label: 'Converted', icon: <FileAudio size={20} />, color: '#2ecc71' },
-                                { key: 'uploads', label: 'Uploads', icon: <ArrowUpFromLine size={20} />, color: '#e67e22' },
-                                { key: 'drops', label: 'Drops', icon: <PackageOpen size={20} />, color: '#9b59b6' },
-                            ].map(({ key, label, icon, color }) => {
-                                const dir = storage.directories[key];
-                                const pct = storage.total.bytes > 0 ? ((dir.bytes / storage.total.bytes) * 100).toFixed(1) : 0;
-                                return (
-                                    <div key={key} className="card" style={{ margin: 0 }}>
-                                        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                <div style={{
-                                                    width: '40px', height: '40px', borderRadius: '10px',
-                                                    background: `${color}18`, color,
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                }}>
-                                                    {icon}
-                                                </div>
-                                                <div>
-                                                    <div style={{ fontSize: '13px', fontWeight: 600 }}>{label}</div>
-                                                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{dir.formatted}</div>
-                                                </div>
-                                            </div>
-                                            <div style={{
-                                                height: '6px', borderRadius: '3px', overflow: 'hidden',
-                                                background: 'var(--bg-secondary)',
-                                            }}>
-                                                <div style={{
-                                                    width: `${Math.min(pct, 100)}%`,
-                                                    height: '100%', borderRadius: '3px',
-                                                    background: color,
-                                                    transition: 'width 0.5s ease',
-                                                }} />
-                                            </div>
-                                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{pct}% of total</div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                {/* Clips Tab */}
+                {activeTab === 'clips' && (
+                    <div className="card">
+                        <div className="card-header">
+                            <div className="card-title"><Film size={18} /> All Clips</div>
                         </div>
+                        <div className="table-container">
+                            {clips.length === 0 ? (
+                                <div className="empty-state">
+                                    <div className="empty-title">No clips yet</div>
+                                </div>
+                            ) : (
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Filename</th>
+                                            <th>Duration</th>
+                                            <th>Size</th>
+                                            <th>Views</th>
+                                            <th>Session</th>
+                                            <th>Created</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {clips.slice((clipsPage - 1) * ITEMS_PER_PAGE, clipsPage * ITEMS_PER_PAGE).map(clip => {
+                                            const isExpired = clip.deleted || (clip.expiresAt && new Date(clip.expiresAt) < new Date());
+                                            return (
+                                                <tr key={clip.token} className={isExpired ? 'status-deleted' : ''}>
+                                                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {clip.filename}
+                                                    </td>
+                                                    <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                                        {clip.duration ? `${Math.floor(clip.duration / 60)}:${Math.floor(clip.duration % 60).toString().padStart(2, '0')}` : '-'}
+                                                    </td>
+                                                    <td>{formatBytes(clip.size)}</td>
+                                                    <td style={{ fontWeight: '500' }}>{clip.downloads}</td>
+                                                    <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                                        {clip.sessionId === 'admin' ? (
+                                                            <span style={{ color: 'var(--accent)', fontWeight: '500' }}>admin</span>
+                                                        ) : (
+                                                            clip.sessionId ? clip.sessionId.slice(0, 12) + '...' : '-'
+                                                        )}
+                                                    </td>
+                                                    <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                                                        {formatDate(clip.createdAt)}
+                                                    </td>
+                                                    <td>
+                                                        <div style={{ display: 'flex', gap: '4px' }}>
+                                                            {!isExpired && (
+                                                                <a
+                                                                    href={getClipUrl(clip.token)}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="btn btn-secondary btn-sm"
+                                                                    title="View"
+                                                                >
+                                                                    <ExternalLink size={14} />
+                                                                </a>
+                                                            )}
+                                                            <button
+                                                                className="btn btn-secondary btn-sm"
+                                                                onClick={() => copyToClipboard(`${window.location.origin}/c/${clip.token}`)}
+                                                                title="Copy link"
+                                                            >
+                                                                <Copy size={14} />
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-secondary btn-sm"
+                                                                onClick={() => handleDeleteClip(clip.token)}
+                                                                title="Delete"
+                                                                style={{ color: 'var(--error)' }}
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                        {clips.length > 0 && (
+                            <Pagination
+                                currentPage={clipsPage}
+                                totalItems={clips.length}
+                                itemsPerPage={ITEMS_PER_PAGE}
+                                onPageChange={setClipsPage}
+                            />
+                        )}
                     </div>
                 )}
             </div>
@@ -538,8 +553,6 @@ function AdminPanel() {
                     {toast.type === 'success' ? <CheckCircle size={16} /> : <XCircle size={16} />} {toast.message}
                 </div>
             )}
-
-            {ConfirmDialog}
         </>
     );
 }

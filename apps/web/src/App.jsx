@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Settings, Sun, Moon, Shield, X, Menu, Cookie, FileText, QrCode, Files, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Settings, Sun, Moon, Shield, X, Menu, Cookie, FileText, QrCode, Files, Sparkles, Film } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import Dashboard from './pages/Dashboard';
 import Downloader from './pages/Downloader';
@@ -12,6 +12,9 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import QRCode from './pages/QRCode';
 import PDFEditor from './pages/PDFEditor';
 import GifMaker from './pages/GifMaker';
+import Clips from './pages/Clips';
+import ClipView from './pages/ClipView';
+import ClipEmbed from './pages/ClipEmbed';
 import NotFound from './pages/NotFound';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
@@ -192,6 +195,10 @@ function App() {
                 <span className="nav-icon"><Sparkles size={18} /></span>
                 <span>GIF Maker</span>
               </NavLink>
+              <NavLink to="/clips" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
+                <span className="nav-icon"><Film size={18} /></span>
+                <span>Clips</span>
+              </NavLink>
               {isAdmin && (
                 <>
                   <div className="nav-section" style={{ marginTop: '16px' }}>Admin</div>
@@ -258,7 +265,10 @@ function App() {
               <Route path="/qr" element={<QRCode />} />
               <Route path="/pdf" element={<PDFEditor />} />
               <Route path="/gif" element={<GifMaker />} />
+              <Route path="/clips" element={<Clips sessionId={sessionId} />} />
               <Route path="/d/:token" element={<DropView />} />
+              <Route path="/c/:token/embed" element={<ClipEmbed />} />
+              <Route path="/c/:token" element={<ClipView />} />
               {isAdmin && <Route path="/admin" element={<AdminPanel />} />}
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="*" element={<NotFound />} />
