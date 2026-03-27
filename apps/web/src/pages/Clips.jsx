@@ -398,7 +398,7 @@ function Clips({ sessionId }) {
                       <Video size={12} style={{ marginRight: '4px' }} />
                       Trimmed: {formatTime(trimEnd - trimStart)} ({Math.round((trimEnd - trimStart) / duration * 100)}% of original)
                       {' — '}
-                      <span style={{ color: 'var(--accent)', fontWeight: 500 }}>ffmpeg trim</span>
+                      <span style={{ color: 'var(--accent-text)', fontWeight: 500 }}>ffmpeg trim</span>
                     </div>
                   )}
                 </div>

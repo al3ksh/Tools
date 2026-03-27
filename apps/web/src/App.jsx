@@ -135,13 +135,35 @@ function App() {
     }
   }, [isDarkMode]);
 
+  function getLuminance(hex) {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    const toLinear = (c) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+  }
+
+  function getContrastTextColor(hex) {
+    return getLuminance(hex) > 0.35
+      ? `color-mix(in srgb, ${hex}, #000 45%)`
+      : `color-mix(in srgb, ${hex}, #fff 50%)`;
+  }
+
+  function getContrastBtnText(hex) {
+    return getLuminance(hex) > 0.35 ? '#000000' : '#ffffff';
+  }
+
   useEffect(() => {
     if (accentColor) {
       document.documentElement.style.setProperty('--accent', accentColor);
       document.documentElement.style.setProperty('--accent-hover', accentColor);
+      document.documentElement.style.setProperty('--accent-text', getContrastTextColor(accentColor));
+      document.documentElement.style.setProperty('--accent-btn-text', getContrastBtnText(accentColor));
     } else {
       document.documentElement.style.removeProperty('--accent');
       document.documentElement.style.removeProperty('--accent-hover');
+      document.documentElement.style.removeProperty('--accent-text');
+      document.documentElement.style.removeProperty('--accent-btn-text');
     }
   }, [accentColor]);
 
@@ -159,7 +181,7 @@ function App() {
           <div className={`sidebar-overlay${sidebarOpen ? ' visible' : ''}`} onClick={() => setSidebarOpen(false)} />
           <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
             <div className="sidebar-header">
-              <h1><Wrench size={24} color="var(--accent)" /> <span>Tools</span></h1>
+              <h1><Wrench size={24} color="var(--accent-text)" /> <span>Tools</span></h1>
             </div>
             <nav className="sidebar-nav">
               <div className="nav-section">Menu</div>
@@ -220,7 +242,7 @@ function App() {
                       title=""
                     >
                       {isAdmin ? 'Admin Session' : 'Guest Session'}
-                      {isAdmin && <Shield size={14} color="var(--accent)" />}
+                      {isAdmin && <Shield size={14} color="var(--accent-text)" />}
                     </div>
                     <div className="user-session" title={sessionId}>ID: {sessionId.slice(0, 8)}...</div>
                   </div>
@@ -413,7 +435,7 @@ function App() {
         <div className="cookie-banner">
           <div className="cookie-banner-text">
             <Cookie size={18} />
-            <span>We use cookies for session management. <a href="/privacy" style={{ color: 'var(--accent)' }}>Learn more</a></span>
+            <span>We use cookies for session management. <a href="/privacy" style={{ color: 'var(--accent-text)' }}>Learn more</a></span>
           </div>
           <div className="cookie-banner-actions">
             <button

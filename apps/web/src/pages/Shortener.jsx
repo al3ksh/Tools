@@ -190,7 +190,7 @@ function Shortener({ sessionId }) {
                           href={link.targetUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          style={{ color: 'var(--accent)', textDecoration: 'none' }}
+                          style={{ color: 'var(--accent-text)', textDecoration: 'none' }}
                           title={link.targetUrl}
                         >
                           {link.targetUrl.length > 50 ? link.targetUrl.slice(0, 50) + '...' : link.targetUrl}

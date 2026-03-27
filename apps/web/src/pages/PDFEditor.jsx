@@ -493,7 +493,7 @@ export default function PDFEditor() {
                       </button>
                       {selectedPages.size > 0 && (
                         <>
-                          <span style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600 }}>{selectedPages.size} selected</span>
+                          <span style={{ fontSize: '12px', color: 'var(--accent-text)', fontWeight: 600 }}>{selectedPages.size} selected</span>
                           <button className="btn btn-secondary btn-sm" onClick={() => rotateSelected(90)}
                             style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}>
                             <RotateCw size={13} /> 90°
@@ -591,7 +591,7 @@ export default function PDFEditor() {
                     }}>
                       <FileIcon size={16} style={{ flexShrink: 0, color: 'var(--text-secondary)' }} />
                       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-                      {mergeInfos[idx]?.pageCount && <span style={{ color: 'var(--accent)', fontSize: '12px', fontWeight: 500 }}>{mergeInfos[idx].pageCount} pg</span>}
+                      {mergeInfos[idx]?.pageCount && <span style={{ color: 'var(--accent-text)', fontSize: '12px', fontWeight: 500 }}>{mergeInfos[idx].pageCount} pg</span>}
                       <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{formatBytes(f.size)}</span>
                       <button style={thumbBtnStyle} onClick={() => moveMergeFile(idx, idx - 1)} disabled={idx === 0}><ChevronLeft size={14} /></button>
                       <button style={thumbBtnStyle} onClick={() => moveMergeFile(idx, idx + 1)} disabled={idx === mergeFiles.length - 1}><ChevronRight size={14} /></button>
@@ -634,7 +634,7 @@ export default function PDFEditor() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
                     <FileIcon size={16} />
                     <span style={{ fontWeight: 500 }}>{splitFile.name}</span>
-                    <span style={{ fontSize: '12px', color: 'var(--accent)' }}>{splitPageCount} pages</span>
+                    <span style={{ fontSize: '12px', color: 'var(--accent-text)' }}>{splitPageCount} pages</span>
                     <button style={thumbBtnStyle} onClick={() => { setSplitFile(null); setSplitPageCount(0); setSplitInput(''); }}><X size={14} /></button>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>

@@ -208,7 +208,7 @@ function AdminPanel() {
                                                 </td>
                                                 <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                                                     {job.sessionId === 'admin' ? (
-                                                        <span style={{ color: 'var(--accent)', fontWeight: '500' }}>admin</span>
+                                                        <span style={{ color: 'var(--accent-text)', fontWeight: '500' }}>admin</span>
                                                     ) : (
                                                         job.sessionId ? job.sessionId.slice(0, 12) + '...' : '-'
                                                     )}
@@ -292,7 +292,7 @@ function AdminPanel() {
                                                     <td>{drop.downloads}</td>
                                                     <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                                                         {drop.sessionId === 'admin' ? (
-                                                            <span style={{ color: 'var(--accent)', fontWeight: '500' }}>admin</span>
+                                                            <span style={{ color: 'var(--accent-text)', fontWeight: '500' }}>admin</span>
                                                         ) : (
                                                             drop.sessionId ? drop.sessionId.slice(0, 12) + '...' : '-'
                                                         )}
@@ -396,7 +396,7 @@ function AdminPanel() {
                                                         href={link.targetUrl}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
-                                                        style={{ color: 'var(--accent)', textDecoration: 'none' }}
+                                                        style={{ color: 'var(--accent-text)', textDecoration: 'none' }}
                                                         title={link.targetUrl}
                                                     >
                                                         {link.targetUrl.length > 50 ? link.targetUrl.slice(0, 50) + '...' : link.targetUrl}
@@ -407,7 +407,7 @@ function AdminPanel() {
                                                 </td>
                                                 <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                                                     {link.sessionId === 'admin' ? (
-                                                        <span style={{ color: 'var(--accent)', fontWeight: '500' }}>admin</span>
+                                                        <span style={{ color: 'var(--accent-text)', fontWeight: '500' }}>admin</span>
                                                     ) : (
                                                         link.sessionId ? link.sessionId.slice(0, 12) + '...' : '-'
                                                     )}
@@ -490,7 +490,7 @@ function AdminPanel() {
                                                     <td style={{ fontWeight: '500' }}>{clip.downloads}</td>
                                                     <td style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                                                         {clip.sessionId === 'admin' ? (
-                                                            <span style={{ color: 'var(--accent)', fontWeight: '500' }}>admin</span>
+                                                            <span style={{ color: 'var(--accent-text)', fontWeight: '500' }}>admin</span>
                                                         ) : (
                                                             clip.sessionId ? clip.sessionId.slice(0, 12) + '...' : '-'
                                                         )}

@@ -62,7 +62,7 @@ export default function GifMaker() {
   const qualityTag = useMemo(() => {
     const pixelScore = Number(width) * Number(fps) * Math.max(clipDuration, 1);
     if (pixelScore < 18000) return { label: 'Small', color: 'var(--success)' };
-    if (pixelScore < 50000) return { label: 'Balanced', color: 'var(--accent)' };
+    if (pixelScore < 50000) return { label: 'Balanced', color: 'var(--accent-text)' };
     return { label: 'High', color: 'var(--warning)' };
   }, [width, fps, clipDuration]);
 
@@ -612,7 +612,7 @@ export default function GifMaker() {
                       />
                       Snap
                     </label>
-                    <div style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 600 }}>
+                    <div style={{ fontSize: '12px', color: 'var(--accent-text)', fontWeight: 600 }}>
                       {formatSeconds(clipDuration)}
                     </div>
                   </div>

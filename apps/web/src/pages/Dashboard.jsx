@@ -216,7 +216,7 @@ function Dashboard({ sessionId }) {
                     <tr key={job.id}>
                       <td>
                         <Link to={`/${job.type === 'download' ? 'downloader' : job.type === 'convert' ? 'converter' : job.type}`} style={{ color: 'inherit', textDecoration: 'none', display: 'flex', alignItems: 'center' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--accent)' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--accent-text)' }}>
                             {job.type === 'download' ? <Download size={18} /> :
                               job.type === 'convert' ? <FileAudio size={18} /> :
                                 job.type === 'shortener' ? <LinkIcon size={18} /> :
