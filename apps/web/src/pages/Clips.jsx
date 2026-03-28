@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Film, Upload, Play, Pause, SkipBack, SkipForward, Copy, Trash2, Clock, CheckCircle, XCircle, Scissors, Video, Loader, Eye, ExternalLink } from 'lucide-react';
-import { api, formatBytes, formatDate, getClipUrl, getClipStreamUrl, chunkedUpload } from '../api';
+import { api, formatBytes, formatDate, getClipUrl, getClipStreamUrl, uploadChunks, finalizeUpload } from '../api';
 import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import FileUploader from '../components/FileUploader';
@@ -38,7 +38,7 @@ function parseTime(str) {
   return Number.isNaN(num) ? 0 : Math.max(0, num);
 }
 
-function Clips({ sessionId }) {
+function Clips({ sessionId, isAdmin }) {
   const [file, setFile] = useState(null);
   const [clips, setClips] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -204,12 +204,12 @@ function Clips({ sessionId }) {
       setUploadPhase('uploading');
       setUploadProgress(0);
 
-      const result = await chunkedUpload(
-        file,
-        sessionId,
-        trimOptions,
-        (progress) => setUploadProgress(progress)
-      );
+      const uploadId = await uploadChunks(file, (progress) => setUploadProgress(progress));
+
+      setUploadPhase('processing');
+      setUploadProgress(null);
+
+      const result = await finalizeUpload(uploadId, file.name, sessionId, trimOptions);
 
       setCreatedClip(result);
       setFile(null);
@@ -226,13 +226,7 @@ function Clips({ sessionId }) {
 
   const handleDelete = async (clip) => {
     try {
-      const response = await fetch(`${window.location.origin}/api/clip/${clip.token}`, {
-        method: 'DELETE',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
-      });
-      if (!response.ok) throw new Error('Delete failed');
+      await api.deleteClip(clip.token, sessionId);
       showToast('Clip deleted');
       fetchClips();
     } catch (err) {
@@ -272,10 +266,10 @@ function Clips({ sessionId }) {
                   maxSizeMB={200}
                   accept="video/mp4,video/webm,video/quicktime,video/x-matroska,.mkv,.mov"
                   selectedFile={file}
-                  noLimit={!!localStorage.getItem('adminToken')}
+                  noLimit={isAdmin}
                 />
                 <div className="form-help">
-                  Supported: MP4, WEBM, MOV, MKV (max {localStorage.getItem('adminToken') ? '5GB' : '200MB'})
+                  Supported: MP4, WEBM, MOV, MKV (max {isAdmin ? '5GB' : '200MB'})
                 </div>
               </div>
 
@@ -389,7 +383,7 @@ function Clips({ sessionId }) {
                     </div>
                   </div>
 
-                  {trimEnd > trimStart && trimEnd > 0 && duration > 0 && (
+                  {trimEnd > trimStart && trimEnd > 0 && isFinite(duration) && duration > 0 && (
                     <div style={{
                       fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px',
                       padding: '8px 10px', borderRadius: '6px', background: 'rgba(52, 152, 219, 0.1)',
@@ -413,8 +407,8 @@ function Clips({ sessionId }) {
               {uploadProgress != null && (
                 <div style={{ marginBottom: '15px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                    {uploadPhase === 'trimming' && <Loader size={14} className="spin" />}
-                    {uploadPhase === 'trimming' ? 'Trimming...' : 'Uploading...'}
+                    {uploadPhase === 'processing' && <Loader size={14} className="spin" />}
+                    {uploadPhase === 'processing' ? 'Processing...' : 'Uploading...'}
                     <span style={{ marginLeft: 'auto', fontWeight: 500 }}>{Math.round(uploadProgress)}%</span>
                   </div>
                   <div style={{
@@ -427,6 +421,15 @@ function Clips({ sessionId }) {
                       background: 'var(--success)',
                       transition: 'width 0.3s ease',
                     }} />
+                  </div>
+                </div>
+              )}
+
+              {uploadPhase === 'processing' && uploadProgress == null && (
+                <div style={{ marginBottom: '15px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                    <Loader size={14} className="spin" />
+                    Merging and processing video...
                   </div>
                 </div>
               )}
@@ -453,7 +456,7 @@ function Clips({ sessionId }) {
 
               <button type="submit" className="btn btn-primary" disabled={uploading || !file}>
                 {uploading ? (
-                  <><Loader size={16} className="spin" /> {uploadPhase === 'trimming' ? 'Trimming...' : 'Uploading...'}</>
+                  <><Loader size={16} className="spin" /> {uploadPhase === 'processing' ? 'Processing...' : 'Uploading...'}</>
                 ) : (
                   <><Upload size={16} /> Upload Clip</>
                 )}

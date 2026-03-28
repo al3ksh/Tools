@@ -1,8 +1,7 @@
 const Database = require('better-sqlite3');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const { PRESETS, JOB_STATUS } = require('../../../packages/shared/types');
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const DB_PATH = path.join(DATA_DIR, 'tools.db');
@@ -18,7 +17,6 @@ function safePath(baseDir, relativePath) {
   return resolved;
 }
 
-// Ensure directories exist
 ['downloads', 'converted', 'uploads'].forEach(dir => {
   const dirPath = path.join(DATA_DIR, dir);
   if (!fs.existsSync(dirPath)) {
@@ -28,14 +26,17 @@ function safePath(baseDir, relativePath) {
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
 
-// Active processes map for cancellation
+db.prepare(`UPDATE jobs SET status = 'failed', error = 'Worker restarted', finishedAt = ? WHERE status = 'running'`)
+  .run(new Date().toISOString());
+console.log('Reset orphaned running jobs from previous session');
+
 const activeProcesses = new Map();
 
-// Prepared statements
 const claimNextJob = db.prepare(`
   UPDATE jobs SET status = 'running', startedAt = ? 
-  WHERE id = (SELECT id FROM jobs WHERE status = 'queued' ORDER BY createdAt ASC LIMIT 1)
+  WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND isCancelling = 0 ORDER BY createdAt ASC LIMIT 1)
   RETURNING *
 `);
 
@@ -47,12 +48,39 @@ const finishJob = db.prepare(`
   UPDATE jobs SET status = ?, finishedAt = ?, outputJson = ?, error = ?, expiresAt = ? WHERE id = ?
 `);
 
+const selectExpiredDoneJobs = db.prepare(`
+  SELECT * FROM jobs WHERE status = 'done' AND expiresAt < ? AND deleted = 0
+`);
+const expireJob = db.prepare(`UPDATE jobs SET status = 'expired', deleted = 1 WHERE id = ?`);
+const selectExpiredDrops = db.prepare(`
+  SELECT * FROM drops WHERE deleted = 0 AND expiresAt < ?
+`);
+const expireDrop = db.prepare(`UPDATE drops SET deleted = 1 WHERE token = ?`);
+const selectStaleFailedJobs = db.prepare(`
+  SELECT * FROM jobs WHERE status = 'failed' AND finishedAt < ? AND deleted = 0
+`);
+const deleteStaleFailedJobs = db.prepare(`UPDATE jobs SET deleted = 1 WHERE id = ?`);
+const selectExpiredClips = db.prepare(`
+  SELECT * FROM clips WHERE deleted = 0 AND expiresAt < ?
+`);
+const expireClip = db.prepare(`UPDATE clips SET deleted = 1 WHERE token = ?`);
+const selectExpiredShortlinks = db.prepare(`
+  SELECT * FROM shortlinks WHERE deleted = 0 AND expiresAt IS NOT NULL AND expiresAt < ?
+`);
+const expireShortlink = db.prepare(`UPDATE shortlinks SET deleted = 1 WHERE slug = ?`);
+const selectCancellingJobs = db.prepare(`
+  SELECT id FROM jobs WHERE isCancelling = 1 AND status IN ('queued', 'running')
+`);
+const clearCancellingFlag = db.prepare(`UPDATE jobs SET isCancelling = 0 WHERE id = ?`);
+const cancelIfCancellable = db.prepare(`
+  UPDATE jobs SET status = 'failed', finishedAt = ?, error = ?, isCancelling = 0 WHERE id = ? AND status IN ('queued', 'running')
+`);
+
 function updateProgress(jobId, progress, logsTail) {
   updateJobProgress.run(progress, logsTail, jobId);
 }
 
 function finishWithSuccess(jobId, outputJson, isAdmin = false) {
-  // Set expiration to 1 hour from now for guests, null for admins
   const expiresAt = isAdmin ? null : new Date(Date.now() + 60 * 60 * 1000).toISOString();
   finishJob.run('done', new Date().toISOString(), JSON.stringify(outputJson), null, expiresAt, jobId);
 }
@@ -75,7 +103,15 @@ function checkDiskSpace(requiredMB = 500) {
   }
 }
 
-// Download job processor
+function getAudioDuration(filePath) {
+  try {
+    const out = execFileSync('ffprobe', [
+      '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', filePath
+    ], { encoding: 'utf8', timeout: 30000 }).trim();
+    return parseFloat(out) || 0;
+  } catch (e) { return 0; }
+}
+
 async function processDownloadJob(job) {
   const input = JSON.parse(job.inputJson);
   const { url, preset, presetConfig, isAdmin } = input;
@@ -86,9 +122,9 @@ async function processDownloadJob(job) {
     return;
   }
 
-  const outputDir = safePath(DATA_DIR, 'downloads');
-  fs.mkdirSync(path.join(outputDir, jobId), { recursive: true });
-  const outputTemplate = path.join(outputDir, jobId, '%(extractor)s_%(uploader)s_%(upload_date)s_%(title)s_%(id)s.%(ext)s');
+  const outputDir = safePath(DATA_DIR, path.join('downloads', jobId));
+  fs.mkdirSync(outputDir, { recursive: true });
+  const outputTemplate = path.join(outputDir, '%(extractor)s_%(uploader)s_%(upload_date)s_%(title)s_%(id)s.%(ext)s');
 
   const args = [
     '--no-playlist',
@@ -99,7 +135,6 @@ async function processDownloadJob(job) {
     '-o', outputTemplate,
   ];
 
-  // Preset-specific options
   if (presetConfig.extractAudio) {
     args.push('-x');
     args.push('--audio-format', presetConfig.audioFormat);
@@ -118,8 +153,12 @@ async function processDownloadJob(job) {
     activeProcesses.set(jobId, ytdlp);
     let logsTail = '';
     let lastProgress = 0;
+    let lastProgressUpdate = 0;
+
+    let timedOut = false;
 
     const processTimer = setTimeout(() => {
+      timedOut = true;
       ytdlp.kill('SIGKILL');
       finishWithError(jobId, 'Job timed out after 30 minutes');
     }, MAX_PROCESS_TIME);
@@ -131,11 +170,13 @@ async function processDownloadJob(job) {
         logsTail = logsTail.slice(-5000);
       }
 
-      // Parse progress from yt-dlp output
       const progressMatch = text.match(/(\d+\.?\d*)%/);
       if (progressMatch) {
         lastProgress = Math.round(parseFloat(progressMatch[1]));
-        updateProgress(jobId, lastProgress, logsTail);
+        if (Date.now() - lastProgressUpdate >= 500) {
+          updateProgress(jobId, lastProgress, logsTail);
+          lastProgressUpdate = Date.now();
+        }
       }
     });
 
@@ -151,13 +192,14 @@ async function processDownloadJob(job) {
       activeProcesses.delete(jobId);
 
       if (signal === 'SIGKILL') {
-        finishWithError(jobId, 'Cancelled by user');
+        if (!timedOut) {
+          finishWithError(jobId, 'Cancelled by user');
+        }
         resolve();
       } else if (code === 0) {
         try {
-          // List created files
-          const files = fs.readdirSync(path.join(outputDir, jobId)).map(filename => {
-            const filePath = path.join(outputDir, jobId, filename);
+          const files = fs.readdirSync(outputDir).map(filename => {
+            const filePath = path.join(outputDir, filename);
             const stat = fs.statSync(filePath);
             return {
               filename,
@@ -166,6 +208,7 @@ async function processDownloadJob(job) {
             };
           });
 
+          updateProgress(jobId, 100, logsTail);
           finishWithSuccess(jobId, { files }, isAdmin);
           resolve();
         } catch (e) {
@@ -187,7 +230,6 @@ async function processDownloadJob(job) {
   });
 }
 
-// Convert job processor
 async function processConvertJob(job) {
   const input = JSON.parse(job.inputJson);
   const { source, options, isAdmin } = input;
@@ -204,11 +246,13 @@ async function processConvertJob(job) {
   } else if (source.type === 'path') {
     inputPath = safePath(DATA_DIR, source.path);
   } else {
-    throw new Error('Invalid source type');
+    finishWithError(jobId, 'Invalid source type');
+    return;
   }
 
   if (!fs.existsSync(inputPath)) {
-    throw new Error('Input file not found');
+    finishWithError(jobId, 'Input file not found');
+    return;
   }
 
   const outputDir = safePath(DATA_DIR, path.join('converted', String(jobId)));
@@ -216,23 +260,10 @@ async function processConvertJob(job) {
 
   const outputExt = options.format;
   const outputPath = path.join(outputDir, `output.${outputExt}`);
-
-  function getAudioDuration(filePath) {
-    try {
-      const { execFileSync } = require('child_process');
-      const out = execFileSync('ffprobe', [
-        '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', filePath
-      ], { encoding: 'utf8' }).trim();
-      return parseFloat(out) || 0;
-    } catch (e) { return 0; }
-  }
-
   const inputDuration = getAudioDuration(inputPath);
 
-  // Build ffmpeg command
   const args = ['-i', inputPath];
 
-  // Trim options
   if (options.trim) {
     if (options.trim.startSec !== undefined) {
       args.push('-ss', String(options.trim.startSec));
@@ -242,26 +273,31 @@ async function processConvertJob(job) {
     }
   }
 
-  // Normalization
   if (options.normalize && options.normalize.enabled) {
-    const targetLufs = options.normalize.targetLufs || -14;
+    const targetLufs = Number(options.normalize.targetLufs);
+    if (isNaN(targetLufs) || targetLufs < -70 || targetLufs > 0) {
+      finishWithError(jobId, 'Invalid normalization target');
+      return;
+    }
     args.push('-af', `loudnorm=I=${targetLufs}:TP=-1.5:LRA=11`);
   }
 
-  // Audio bitrate
   if (options.audioBitrate) {
     args.push('-b:a', `${options.audioBitrate}k`);
   }
 
-  // Output format
   args.push('-y', outputPath);
 
   return new Promise((resolve, reject) => {
     const ffmpeg = spawn('ffmpeg', args);
     activeProcesses.set(jobId, ffmpeg);
     let logsTail = '';
+    let lastProgressUpdate = 0;
+
+    let timedOut = false;
 
     const processTimer = setTimeout(() => {
+      timedOut = true;
       ffmpeg.kill('SIGKILL');
       finishWithError(jobId, 'Job timed out after 30 minutes');
     }, MAX_PROCESS_TIME);
@@ -278,7 +314,10 @@ async function processConvertJob(job) {
         if (timeMatch) {
           const current = parseInt(timeMatch[1]) * 3600 + parseInt(timeMatch[2]) * 60 + parseInt(timeMatch[3]) + parseInt(timeMatch[4]) / 100;
           const progress = Math.min(Math.round((current / inputDuration) * 100), 100);
-          db.prepare('UPDATE jobs SET progress = ? WHERE id = ?').run(progress, jobId);
+          if (Date.now() - lastProgressUpdate >= 500) {
+            updateProgress(jobId, progress, logsTail);
+            lastProgressUpdate = Date.now();
+          }
         }
       }
     });
@@ -288,11 +327,14 @@ async function processConvertJob(job) {
       activeProcesses.delete(jobId);
 
       if (signal === 'SIGKILL') {
-        finishWithError(jobId, 'Cancelled by user');
+        if (!timedOut) {
+          finishWithError(jobId, 'Cancelled by user');
+        }
         resolve();
       } else if (code === 0) {
         try {
           const stat = fs.statSync(outputPath);
+          updateProgress(jobId, 100, logsTail);
           finishWithSuccess(jobId, {
             files: [{
               filename: `output.${outputExt}`,
@@ -300,9 +342,9 @@ async function processConvertJob(job) {
               size: stat.size
             }]
           }, isAdmin);
-          if (input.source && input.source.type === 'upload' && input.source.path) {
+          if (source.type === 'upload' && source.path) {
             try {
-              const uploadPath = safePath(DATA_DIR, input.source.path);
+              const uploadPath = safePath(DATA_DIR, source.path);
               if (fs.existsSync(uploadPath)) fs.unlinkSync(uploadPath);
             } catch (e) { console.error('Failed to cleanup upload:', e.message); }
           }
@@ -326,7 +368,6 @@ async function processConvertJob(job) {
   });
 }
 
-// Job processor
 async function processJob(job) {
   if (job.type === 'download') {
     return processDownloadJob(job);
@@ -337,9 +378,12 @@ async function processJob(job) {
   }
 }
 
-// Main polling loop
+let shuttingDown = false;
+let processing = false;
+
 async function pollAndProcess() {
-  if (shuttingDown) return;
+  if (shuttingDown || processing) return;
+  processing = true;
   try {
     const job = claimNextJob.get(new Date().toISOString());
 
@@ -350,11 +394,12 @@ async function pollAndProcess() {
         console.log(`Job ${job.id} completed`);
       } catch (err) {
         console.error(`Job ${job.id} failed:`, err.message);
-        // Error already handled in processJob
       }
     }
   } catch (err) {
     console.error('Polling error:', err);
+  } finally {
+    processing = false;
   }
 }
 
@@ -362,35 +407,31 @@ console.log('Worker starting...');
 console.log(`Data directory: ${DATA_DIR}`);
 console.log(`Database: ${DB_PATH}`);
 
-// Cleanup expired jobs every 5 minutes
 async function cleanupExpiredJobs() {
   try {
     const now = new Date().toISOString();
-    const expiredJobs = db.prepare(`
-      SELECT * FROM jobs WHERE status = 'done' AND expiresAt < ? AND deletedAt IS NULL
-    `).all(now);
+    const expiredJobs = selectExpiredDoneJobs.all(now);
 
     for (const job of expiredJobs) {
       console.log(`Expiring job ${job.id}`);
-      db.prepare(`UPDATE jobs SET status = 'expired' WHERE id = ?`).run(job.id);
+      expireJob.run(job.id);
 
-      // Delete files
       const dirs = ['downloads', 'converted'];
       for (const dir of dirs) {
-        const jobDir = path.join(DATA_DIR, dir, job.id);
-        if (fs.existsSync(jobDir)) {
-          fs.rmSync(jobDir, { recursive: true, force: true });
-        }
+        try {
+          const jobDir = safePath(DATA_DIR, path.join(dir, job.id));
+          if (fs.existsSync(jobDir)) {
+            fs.rmSync(jobDir, { recursive: true, force: true });
+          }
+        } catch (e) { }
       }
     }
 
-    const expiredDrops = db.prepare(`
-      SELECT * FROM drops WHERE deleted = 0 AND expiresAt < ?
-    `).all(now);
+    const expiredDrops = selectExpiredDrops.all(now);
 
     for (const drop of expiredDrops) {
       console.log(`Expiring drop ${drop.token}`);
-      db.prepare(`UPDATE drops SET deleted = 1 WHERE token = ?`).run(drop.token);
+      expireDrop.run(drop.token);
 
       const dropPath = safePath(DATA_DIR, drop.path);
       if (fs.existsSync(dropPath)) {
@@ -404,17 +445,42 @@ async function cleanupExpiredJobs() {
       console.log(`Expired ${expiredJobs.length} jobs and ${expiredDrops.length} drops`);
     }
 
-    const staleJobs = db.prepare(`
-      SELECT * FROM jobs WHERE status = 'failed' AND finishedAt < ?
-    `).all(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+    const expiredClips = selectExpiredClips.all(now);
+    for (const clip of expiredClips) {
+      console.log(`Expiring clip ${clip.token}`);
+      expireClip.run(clip.token);
+      if (clip.path) {
+        try {
+          const clipPath = safePath(DATA_DIR, clip.path);
+          if (fs.existsSync(clipPath)) fs.unlinkSync(clipPath);
+        } catch (e) { }
+      }
+    }
+    if (expiredClips.length > 0) {
+      console.log(`Expired ${expiredClips.length} clips`);
+    }
+
+    const expiredLinks = selectExpiredShortlinks.all(now);
+    for (const link of expiredLinks) {
+      console.log(`Expiring shortlink ${link.slug}`);
+      expireShortlink.run(link.slug);
+    }
+    if (expiredLinks.length > 0) {
+      console.log(`Expired ${expiredLinks.length} shortlinks`);
+    }
+
+    const staleJobs = selectStaleFailedJobs.all(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
     for (const job of staleJobs) {
       console.log(`Cleaning up failed job ${job.id}`);
+      deleteStaleFailedJobs.run(job.id);
       for (const dir of ['downloads', 'converted']) {
-        const jobDir = path.join(DATA_DIR, dir, job.id);
-        if (fs.existsSync(jobDir)) {
-          try { fs.rmSync(jobDir, { recursive: true, force: true }); } catch (e) { }
-        }
+        try {
+          const jobDir = safePath(DATA_DIR, path.join(dir, job.id));
+          if (fs.existsSync(jobDir)) {
+            fs.rmSync(jobDir, { recursive: true, force: true });
+          }
+        } catch (e) { }
       }
     }
 
@@ -422,26 +488,29 @@ async function cleanupExpiredJobs() {
       console.log(`Cleaned up ${staleJobs.length} stale failed jobs`);
     }
 
-    // Cleanup temp files older than 1 hour
     const tempDirs = [
       path.join(DATA_DIR, 'uploads', 'gif-temp'),
       path.join(DATA_DIR, 'uploads', 'pdf-temp'),
+      path.join(DATA_DIR, 'clips-temp'),
     ];
     const oneHourAgo = Date.now() - 60 * 60 * 1000;
     for (const tempDir of tempDirs) {
       if (!fs.existsSync(tempDir)) continue;
-      for (const file of fs.readdirSync(tempDir)) {
-        const filePath = path.join(tempDir, file);
+      for (const entry of fs.readdirSync(tempDir)) {
+        const entryPath = path.join(tempDir, entry);
         try {
-          const stat = fs.statSync(filePath);
+          const stat = fs.statSync(entryPath);
           if (stat.mtimeMs < oneHourAgo) {
-            fs.unlinkSync(filePath);
+            if (stat.isDirectory()) {
+              fs.rmSync(entryPath, { recursive: true, force: true });
+            } else {
+              fs.unlinkSync(entryPath);
+            }
           }
         } catch (e) { }
       }
     }
 
-    // Cleanup orphaned uploads older than 24 hours
     const uploadsDir = path.join(DATA_DIR, 'uploads');
     if (fs.existsSync(uploadsDir)) {
       const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
@@ -465,10 +534,9 @@ async function cleanupExpiredJobs() {
   }
 }
 
-// Poll and cancel jobs
 function pollAndCancel() {
   try {
-    const jobsToCancel = db.prepare(`SELECT id FROM jobs WHERE isCancelling = 1 AND status IN ('queued', 'running')`).all();
+    const jobsToCancel = selectCancellingJobs.all();
 
     for (const { id } of jobsToCancel) {
       if (activeProcesses.has(id)) {
@@ -477,18 +545,15 @@ function pollAndCancel() {
         proc.kill('SIGKILL');
         activeProcesses.delete(id);
       } else {
-        // Fix for queued jobs that were never run, or somehow stuck
         console.log(`Cancelling hanging/queued job ${id}`);
-        finishWithError(id, 'Cancelled by user');
+        cancelIfCancellable.run(new Date().toISOString(), 'Cancelled by user', id);
       }
-      db.prepare(`UPDATE jobs SET isCancelling = 0 WHERE id = ?`).run(id);
+      clearCancellingFlag.run(id);
     }
   } catch (err) {
     console.error('Cancellation polling error:', err);
   }
 }
-
-let shuttingDown = false;
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
@@ -513,6 +578,6 @@ function gracefulShutdown() {
 
 setInterval(pollAndProcess, POLL_INTERVAL);
 setInterval(pollAndCancel, POLL_INTERVAL);
-setInterval(cleanupExpiredJobs, 5 * 60 * 1000); // Every 5 minutes
-pollAndProcess(); // Initial poll
-cleanupExpiredJobs(); // Initial cleanup
+setInterval(cleanupExpiredJobs, 5 * 60 * 1000);
+pollAndProcess();
+cleanupExpiredJobs();

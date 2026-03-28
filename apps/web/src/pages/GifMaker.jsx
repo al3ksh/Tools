@@ -14,7 +14,7 @@ function formatSeconds(value) {
   return `${value.toFixed(2)}s`;
 }
 
-export default function GifMaker() {
+export default function GifMaker({ isAdmin }) {
   const [file, setFile] = useState(null);
   const [meta, setMeta] = useState(null);
   const [loadingMeta, setLoadingMeta] = useState(false);
@@ -524,7 +524,7 @@ export default function GifMaker() {
               maxSizeMB={200}
               accept="video/*,image/*"
               selectedFile={file}
-              noLimit={!!localStorage.getItem('adminToken')}
+              noLimit={isAdmin}
             />
             <div className="form-help" style={{ marginTop: '-6px' }}>
               Supported: MP4, WEBM, MOV, MKV, GIF and images (PNG, JPG, WEBP)

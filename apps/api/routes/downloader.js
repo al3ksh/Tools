@@ -3,19 +3,7 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const { statements } = require('../db/database');
 const { PRESETS } = require('../../../packages/shared/types');
-const { validatePublicUrl } = require('./utils');
-
-const MAX_ACTIVE_JOBS = 10;
-
-function checkJobLimit(sessionId, isAdmin) {
-  if (isAdmin) return;
-  const total = statements.countActiveJobsTotal.get().count;
-  if (total >= 50) throw new Error('Server queue is full. Please try again later.');
-  if (sessionId) {
-    const userCount = statements.countActiveJobsBySession.get(sessionId).count;
-    if (userCount >= MAX_ACTIVE_JOBS) throw new Error('Too many active jobs. Please wait for current jobs to finish.');
-  }
-}
+const { validatePublicUrl, checkJobLimit } = require('./utils');
 
 // POST /api/downloader - create a download job
 router.post('/', async (req, res) => {
@@ -42,15 +30,23 @@ router.post('/', async (req, res) => {
 
     res.json({ jobId });
   } catch (err) {
-    const isValidation = err.message && (
+    const isRateLimit = err.message && (
+      err.message.includes('queue') ||
+      err.message.includes('Too many')
+    );
+    const isValidation = err.message && !isRateLimit && (
       err.message.includes('Invalid') ||
       err.message.includes('Blocked') ||
       err.message.includes('scheme') ||
-      err.message.includes('queue') ||
-      err.message.includes('Too many') ||
       err.message.includes('Insufficient')
     );
-    res.status(isValidation ? 429 : 500).json({ error: isValidation ? err.message : 'Internal server error' });
+    if (isRateLimit) {
+      res.status(429).json({ error: err.message });
+    } else if (isValidation) {
+      res.status(400).json({ error: err.message });
+    } else {
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 });
 

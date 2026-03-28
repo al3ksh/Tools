@@ -50,7 +50,7 @@ router.post('/generate', qrRateLimit, async (req, res) => {
 });
 
 // POST /api/qr/generate-svg - generate QR code as SVG string
-router.post('/generate-svg', async (req, res) => {
+router.post('/generate-svg', qrRateLimit, async (req, res) => {
   try {
     const { text, darkColor = '#000000', lightColor = '#ffffff', errorCorrection = 'M' } = req.body;
 

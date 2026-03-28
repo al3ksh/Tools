@@ -4,10 +4,10 @@ const jwt = require('jsonwebtoken');
 const router = express.Router();
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.ADMIN_PASSWORD;
+const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET;
 
 // In-memory IP rate limiting for login attempts
-const loginAttempts = new Map(); // ip -> { count, blockedUntil }
+const loginAttempts = new Map(); // ip -> { count, blockedUntil, firstAttempt }
 
 const MAX_ATTEMPTS = 3;
 const BLOCK_DURATION = 30 * 60 * 1000; // 30 minutes
@@ -25,8 +25,6 @@ function passwordsMatch(input, expected) {
 }
 
 function getAdminToken(req) {
-    const headerToken = req.headers['x-admin-token'];
-    if (headerToken) return headerToken;
     return req.cookies?.admin_token || null;
 }
 
@@ -55,6 +53,8 @@ setInterval(() => {
     const now = Date.now();
     for (const [ip, data] of loginAttempts) {
         if (data.blockedUntil && data.blockedUntil < now) {
+            loginAttempts.delete(ip);
+        } else if (data.firstAttempt && now - data.firstAttempt > BLOCK_DURATION) {
             loginAttempts.delete(ip);
         }
     }
@@ -88,16 +88,16 @@ router.post('/login', (req, res) => {
         loginAttempts.delete(ip);
 
         const token = jwt.sign(
-            { role: 'admin' },
-            ADMIN_JWT_SECRET,
-            { expiresIn: '12h' }
+          { role: 'admin', aud: 'tools-api', iss: 'tools-api' },
+          ADMIN_JWT_SECRET,
+          { expiresIn: '12h' }
         );
 
         res.cookie('admin_token', token, authCookieOptions());
         res.json({ success: true });
     } else {
         // Failed — increment counter
-        const current = loginAttempts.get(ip) || { count: 0, blockedUntil: null };
+        const current = loginAttempts.get(ip) || { count: 0, blockedUntil: null, firstAttempt: Date.now() };
         current.count += 1;
 
         if (current.count >= MAX_ATTEMPTS) {

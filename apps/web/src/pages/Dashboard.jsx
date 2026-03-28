@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api, formatBytes, formatDate, getFileUrl } from '../api';
 import { Link } from 'react-router-dom';
 import { LayoutDashboard, RefreshCw, FolderOpen, Clock, CheckCircle, XCircle, Zap, Download, FileAudio, Link as LinkIcon, Database, ClipboardList, Settings, Inbox, Archive } from 'lucide-react';
 import Pagination from '../components/Pagination';
 
-function Dashboard({ sessionId }) {
+function Dashboard({ sessionId, isAdmin }) {
   const [jobs, setJobs] = useState([]);
   const [storage, setStorage] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -16,7 +16,6 @@ function Dashboard({ sessionId }) {
 
   const fetchData = async () => {
     try {
-      const isAdmin = !!localStorage.getItem('adminToken');
       const [jobsData, storageData] = await Promise.all([
         api.getJobs(sessionId),
         isAdmin ? api.getStorage().catch(() => null) : Promise.resolve(null)
@@ -36,17 +35,17 @@ function Dashboard({ sessionId }) {
     return () => clearInterval(interval);
   }, []);
 
-  const myJobs = jobs.filter(j => j.inputJson?.sessionId === sessionId);
-  const filteredJobs = filter === 'all' ? jobs : filter === 'mine' ? myJobs : jobs.filter(j => j.type === filter);
+  const myJobs = useMemo(() => jobs.filter(j => j.inputJson?.sessionId === sessionId), [jobs, sessionId]);
+  const filteredJobs = useMemo(() => filter === 'all' ? jobs : filter === 'mine' ? myJobs : jobs.filter(j => j.type === filter), [filter, jobs, myJobs]);
 
-  const stats = {
+  const stats = useMemo(() => ({
     total: jobs.length,
     mine: myJobs.length,
     queued: jobs.filter(j => j.status === 'queued').length,
     running: jobs.filter(j => j.status === 'running').length,
     done: jobs.filter(j => j.status === 'done').length,
     failed: jobs.filter(j => j.status === 'failed').length,
-  };
+  }), [jobs, myJobs]);
 
   const totalStorage = storage?.total?.bytes || 0;
 
@@ -260,18 +259,14 @@ function Dashboard({ sessionId }) {
                       <td>
                         {job.status === 'done' && job.outputJson?.files?.length > 0 && (
                           <a
-                            href={getFileUrl(job.id, job.outputJson.files[0].filename)}
+                            href={getFileUrl(job.id, job.outputJson.files[0].filename, sessionId)}
                             className="btn btn-success btn-sm"
                           >
                             <Download size={14} /> Download
                           </a>
                         )}
-                        {job.status === 'failed' && (
-                          <span style={{ color: 'var(--error)', fontSize: '12px' }} title={job.error}>
-                            Error
-                          </span>
-                        )}
                       </td>
+
                     </tr>
                   ))}
                 </tbody>

@@ -28,9 +28,10 @@ router.post('/', async (req, res) => {
 
     const finalSlug = slug || uuidv4().substring(0, 8);
     const createdAt = new Date().toISOString();
+    const expiresAt = req.isAdmin ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     try {
-      statements.createShortlink.run(finalSlug, url, createdAt, sessionId || null);
+      statements.createShortlink.run(finalSlug, url, createdAt, sessionId || null, expiresAt);
     } catch (err) {
       if (err.message.includes('UNIQUE constraint')) {
         return res.status(409).json({ error: 'Slug already exists' });
@@ -93,6 +94,11 @@ const redirectHandler = (req, res) => {
 
     if (!link) {
       return res.status(404).json({ error: 'Short link not found' });
+    }
+
+    if (link.expiresAt && new Date(link.expiresAt) < new Date()) {
+      statements.expireShortlink.run(slug);
+      return res.status(410).json({ error: 'This short link has expired' });
     }
 
     if (!/^https?:\/\//i.test(link.targetUrl)) {

@@ -6,21 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { statements, DATA_DIR } = require('../db/database');
-
-function safePath(baseDir, relativePath) {
-  const resolved = path.resolve(baseDir, relativePath);
-  const normalizedBase = path.resolve(baseDir);
-  if (!resolved.startsWith(normalizedBase + path.sep) && resolved !== normalizedBase) {
-    throw new Error('Invalid path');
-  }
-  return resolved;
-}
-
-function setContentDisposition(res, filename) {
-  const encoded = encodeURIComponent(filename).replace(/['()]/g, escape);
-  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_');
-  res.setHeader('Content-Disposition', `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`);
-}
+const { safePath, setContentDisposition, createGuestSizeLimit } = require('./utils');
 
 const dropsDir = path.join(DATA_DIR, 'drops');
 if (!fs.existsSync(dropsDir)) {
@@ -41,14 +27,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 * 1024 } });
 const uploadGuest = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
-const dropSizeLimit = (req, res, next) => {
-  if (req.isAdmin) return next();
-  const MAX_GUEST = 50 * 1024 * 1024;
-  if (req.headers['content-length'] && parseInt(req.headers['content-length']) > MAX_GUEST) {
-    return res.status(413).json({ error: `File too large. Guest limit is 50MB.` });
-  }
-  next();
-};
+const dropSizeLimit = createGuestSizeLimit(50);
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16);
@@ -106,7 +85,7 @@ router.post('/upload', dropSizeLimit, (req, res, next) => {
 
     res.json({ token, url, hasPassword: !!password });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -129,7 +108,7 @@ router.get('/list', (req, res) => {
     });
     res.json(safe);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -148,7 +127,7 @@ router.delete('/:token', (req, res) => {
     statements.deleteDrop.run(token);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -163,6 +142,11 @@ router.get('/:token/download', (req, res) => {
     }
 
     if (drop.deleted) {
+      return res.status(410).json({ error: 'This file has expired and is no longer available.' });
+    }
+
+    if (drop.expiresAt && new Date(drop.expiresAt) < new Date()) {
+      statements.expireDrop.run(token);
       return res.status(410).json({ error: 'This file has expired and is no longer available.' });
     }
 
@@ -181,7 +165,7 @@ router.get('/:token/download', (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.download(filePath, drop.filename);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -196,6 +180,11 @@ router.post('/:token/download', express.json(), (req, res) => {
     }
 
     if (drop.deleted) {
+      return res.status(410).json({ error: 'This file has expired and is no longer available.' });
+    }
+
+    if (drop.expiresAt && new Date(drop.expiresAt) < new Date()) {
+      statements.expireDrop.run(token);
       return res.status(410).json({ error: 'This file has expired and is no longer available.' });
     }
 
@@ -223,7 +212,7 @@ router.post('/:token/download', express.json(), (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.download(filePath, drop.filename);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -237,6 +226,15 @@ router.get('/:token/info', (req, res) => {
       return res.status(404).json({ error: 'Drop not found' });
     }
 
+    if (drop.deleted) {
+      return res.status(410).json({ error: 'This file has expired and is no longer available.' });
+    }
+
+    if (drop.expiresAt && new Date(drop.expiresAt) < new Date()) {
+      statements.expireDrop.run(token);
+      return res.status(410).json({ error: 'This file has expired and is no longer available.' });
+    }
+
     res.json({
       token: drop.token,
       filename: drop.filename,
@@ -248,7 +246,7 @@ router.get('/:token/info', (req, res) => {
       hasPassword: !!drop.password
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

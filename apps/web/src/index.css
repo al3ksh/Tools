@@ -1436,11 +1436,13 @@ body.light-mode .skeleton-box::after {
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
+
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -1476,15 +1478,5 @@ textarea:focus-visible {
     break-inside: avoid;
     border: 1px solid #ccc;
     box-shadow: none;
-  }
-  body {
-    background: #fff;
-    color: #000;
-  }
-}
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }

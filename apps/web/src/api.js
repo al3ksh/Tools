@@ -1,16 +1,11 @@
 const API_BASE = '/api';
 
-const getAuthHeaders = () => {
-  return {};
-};
-
 async function fetchApi(endpoint, options = {}) {
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...getAuthHeaders(),
       ...options.headers,
     },
   });
@@ -27,8 +22,8 @@ export const api = {
   // Jobs
   getJobs: (sessionId) => fetchApi(`/jobs${sessionId ? `?sessionId=${sessionId}` : ''}`),
   getJob: (id) => fetchApi(`/jobs/${id}`),
-  deleteJob: (id) => fetchApi(`/jobs/${id}`, { method: 'DELETE' }),
-  cancelJob: (id) => fetchApi(`/jobs/${id}/cancel`, { method: 'POST' }),
+  deleteJob: (id, sessionId) => fetchApi(`/jobs/${id}${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`, { method: 'DELETE' }),
+  cancelJob: (id, sessionId) => fetchApi(`/jobs/${id}/cancel${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`, { method: 'POST' }),
 
   // Downloader
   createDownloadJob: (url, preset, sessionId) => fetchApi('/downloader', {
@@ -44,7 +39,6 @@ export const api = {
     const response = await fetch(`${API_BASE}/upload/upload`, {
       method: 'POST',
       credentials: 'include',
-      headers: getAuthHeaders(),
       body: formData,
     });
     if (!response.ok) {
@@ -68,14 +62,14 @@ export const api = {
   getShortlinks: (sessionId) => fetchApi(`/shortlinks/list${sessionId ? `?sessionId=${sessionId}` : ''}`),
 
   // Drop
-  uploadDrop: async (file, sessionId) => {
+  uploadDrop: async (file, sessionId, password) => {
     const formData = new FormData();
     formData.append('file', file);
     if (sessionId) formData.append('sessionId', sessionId);
+    if (password) formData.append('password', password);
     const response = await fetch(`${API_BASE}/drop/upload`, {
       method: 'POST',
       credentials: 'include',
-      headers: getAuthHeaders(),
       body: formData,
     });
     if (!response.ok) {
@@ -87,6 +81,32 @@ export const api = {
 
   getDrops: (sessionId) => fetchApi(`/drop/list${sessionId ? `?sessionId=${sessionId}` : ''}`),
   getDropInfo: (token) => fetchApi(`/drop/${token}/info`),
+
+  downloadDrop: async (token, password) => {
+    const options = { credentials: 'include' };
+    if (password) {
+      options.method = 'POST';
+      options.headers = { 'Content-Type': 'application/json' };
+      options.body = JSON.stringify({ password });
+    }
+    const response = await fetch(`${API_BASE}/drop/${token}/download`, options);
+    if (response.status === 403) {
+      const err = await response.json().catch(() => ({ error: 'Access denied' }));
+      throw new Error(err.error || 'Access denied');
+    }
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Download failed' }));
+      throw new Error(error.error || 'Download failed');
+    }
+    const blob = await response.blob();
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = 'download';
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="?([^";\n]+)"?/);
+      if (match) filename = match[1];
+    }
+    return { blob, filename };
+  },
 
   // Storage
   getStorage: () => fetchApi('/storage'),
@@ -111,7 +131,6 @@ export const api = {
     const response = await fetch(`${API_BASE}/gif/info`, {
       method: 'POST',
       credentials: 'include',
-      headers: getAuthHeaders(),
       body: formData,
     });
     if (!response.ok) {
@@ -132,7 +151,6 @@ export const api = {
     const response = await fetch(`${API_BASE}/gif/process`, {
       method: 'POST',
       credentials: 'include',
-      headers: getAuthHeaders(),
       body: formData,
     });
     if (!response.ok) {
@@ -149,7 +167,6 @@ export const api = {
     const response = await fetch(`${API_BASE}/pdf/info`, {
       method: 'POST',
       credentials: 'include',
-      headers: getAuthHeaders(),
       body: formData,
     });
     if (!response.ok) {
@@ -164,7 +181,6 @@ export const api = {
     const response = await fetch(`${API_BASE}/pdf/merge`, {
       method: 'POST',
       credentials: 'include',
-      headers: getAuthHeaders(),
       body: formData,
     });
     if (!response.ok) {
@@ -180,7 +196,6 @@ export const api = {
     const response = await fetch(`${API_BASE}/pdf/split`, {
       method: 'POST',
       credentials: 'include',
-      headers: getAuthHeaders(),
       body: formData,
     });
     if (!response.ok) {
@@ -196,7 +211,6 @@ export const api = {
     const response = await fetch(`${API_BASE}/pdf/rotate`, {
       method: 'POST',
       credentials: 'include',
-      headers: getAuthHeaders(),
       body: formData,
     });
     if (!response.ok) {
@@ -212,7 +226,6 @@ export const api = {
     const response = await fetch(`${API_BASE}/pdf/remove-pages`, {
       method: 'POST',
       credentials: 'include',
-      headers: getAuthHeaders(),
       body: formData,
     });
     if (!response.ok) {
@@ -227,7 +240,6 @@ export const api = {
     const response = await fetch(`${API_BASE}/pdf/images-to-pdf`, {
       method: 'POST',
       credentials: 'include',
-      headers: getAuthHeaders(),
       body: formData,
     });
     if (!response.ok) {
@@ -243,7 +255,6 @@ export const api = {
     const response = await fetch(`${API_BASE}/pdf/reorder`, {
       method: 'POST',
       credentials: 'include',
-      headers: getAuthHeaders(),
       body: formData,
     });
     if (!response.ok) {
@@ -264,7 +275,10 @@ export const api = {
   getClips: (sessionId) => fetchApi(`/clip/list${sessionId ? `?sessionId=${sessionId}` : ''}`),
   getClipInfo: (token) => fetchApi(`/clip/${token}/info`),
   getAllClips: () => fetchApi('/clip/list?all=true'),
-  deleteClip: (token) => fetchApi(`/clip/${token}`, { method: 'DELETE' }),
+  deleteClip: (token, sessionId) => fetchApi(`/clip/${token}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ sessionId }),
+  }),
 };
 
 export const formatBytes = (bytes) => {
@@ -286,12 +300,13 @@ export const formatTime = (seconds) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
-export const getFileUrl = (jobId, filename = null) => {
-  // If no filename, use auto-find endpoint to get first file in directory
+export const getFileUrl = (jobId, filename = null, sid = null) => {
   if (!filename) {
-    return `/api/files/${jobId}`;
+    const base = `/api/files/${jobId}`;
+    return sid ? `${base}?sessionId=${encodeURIComponent(sid)}` : base;
   }
-  return `/api/files/${jobId}/${encodeURIComponent(filename)}`;
+  const base = `/api/files/${jobId}/${encodeURIComponent(filename)}`;
+  return sid ? `${base}?sessionId=${encodeURIComponent(sid)}` : base;
 };
 export const getDropUrl = (token) => `/api/drop/${token}/download`;
 
@@ -303,7 +318,7 @@ export const getClipEmbedUrl = (token) => `/c/${token}/embed`;
 
 const CHUNK_SIZE = 5 * 1024 * 1024;
 
-export async function chunkedUpload(file, sessionId, trimOptions, onProgress) {
+export async function uploadChunks(file, onProgress) {
   const uploadId = crypto.randomUUID();
 
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
@@ -337,9 +352,13 @@ export async function chunkedUpload(file, sessionId, trimOptions, onProgress) {
     }
   }
 
+  return uploadId;
+}
+
+export async function finalizeUpload(uploadId, filename, sessionId, trimOptions) {
   const body = {
     uploadId,
-    filename: file.name,
+    filename,
     sessionId,
   };
 
@@ -362,6 +381,22 @@ export async function chunkedUpload(file, sessionId, trimOptions, onProgress) {
   }
 
   return finalizeResponse.json();
+}
+
+export async function chunkedUpload(file, sessionId, trimOptions, onProgress) {
+  const uploadId = await uploadChunks(file, onProgress);
+  return finalizeUpload(uploadId, file.name, sessionId, trimOptions);
+}
+
+export function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export const PRESETS = [

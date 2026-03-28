@@ -7,8 +7,7 @@
     "start": "node src/index.js"
   },
   "dependencies": {
-    "better-sqlite3": "^9.4.3",
-    "uuid": "^9.0.1"
+    "better-sqlite3": "^9.4.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

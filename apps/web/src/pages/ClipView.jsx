@@ -4,7 +4,7 @@ import { Download, Film, AlertCircle, CheckCircle, XCircle, Copy, Code, Trash2, 
 import { api, formatBytes, formatDate, getClipStreamUrl, getClipEmbedUrl } from '../api';
 import useToast from '../hooks/useToast';
 
-function ClipView() {
+function ClipView({ isAdmin }) {
   const { token } = useParams();
   const [info, setInfo] = useState(null);
   const [error, setError] = useState('');
@@ -68,13 +68,7 @@ function ClipView() {
 
   const handleDelete = async () => {
     try {
-      const response = await fetch(`/api/clip/${token}`, {
-        method: 'DELETE',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
-      });
-      if (!response.ok) throw new Error('Delete failed');
+      await api.deleteClip(token, sessionId);
       showToast('Clip deleted');
       window.location.href = '/clips';
     } catch (err) {
@@ -83,7 +77,6 @@ function ClipView() {
   };
 
   const isOwner = info && sessionId && info.sessionId === sessionId;
-  const isAdmin = !!localStorage.getItem('adminToken');
   const canDelete = isOwner || isAdmin;
 
   if (loading) {
@@ -151,7 +144,7 @@ function ClipView() {
             loop
             playsInline
             preload="metadata"
-            style={{ width: '100%', display: 'block' }}
+            style={{ width: '100%', maxHeight: '70vh', display: 'block' }}
           />
         </div>
 

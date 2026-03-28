@@ -9,16 +9,18 @@ const { DATA_DIR } = require('../db/database');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.ADMIN_PASSWORD;
+const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET;
 
 const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+const BASE_URL = process.env.BASE_URL || null;
+
+const CRAWLER_RE = /discordbot|twitterbot|slackbot|facebookexternalhit|linkedinbot|telegrambot|whatsapp|skype|googlebot|bingbot|opengraph/i;
+
 function getAdminToken(req) {
-  const headerToken = req.headers['x-admin-token'];
-  if (headerToken) return headerToken;
   return req.cookies?.admin_token || null;
 }
 
@@ -73,18 +75,27 @@ app.use((req, res, next) => {
   const token = getAdminToken(req);
   if (token && ADMIN_JWT_SECRET) {
     try {
-      const payload = jwt.verify(token, ADMIN_JWT_SECRET);
+      const payload = jwt.verify(token, ADMIN_JWT_SECRET, { audience: 'tools-api', issuer: 'tools-api' });
       req.isAdmin = payload?.role === 'admin';
     } catch (err) {
       req.isAdmin = false;
     }
   }
 
-  // Force a shared sessionId for admin across all devices
   if (req.isAdmin) {
     if (req.body) req.body.sessionId = 'admin';
     if (req.query) req.query.sessionId = 'admin';
   }
+
+  if (!req.isAdmin) {
+    if (req.query && req.query.sessionId === 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (req.body && req.body.sessionId === 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+  }
+
   next();
 });
 
@@ -124,6 +135,49 @@ app.use('/api/clip', clipRoutes);
 // Redirect routes (shortener and drop)
 app.get('/s/:slug', redirectHandler);
 
+// OG embed for clips (Discord, Twitter, etc.)
+app.get('/c/:token', (req, res) => {
+  const { statements } = require('../db/database');
+  const clip = statements.getClipInfo.get(req.params.token);
+  if (!clip || clip.deleted) return res.redirect('/');
+
+  const protocol = req.protocol;
+  const host = req.get('host');
+  const origin = BASE_URL || `${protocol}://${host}`;
+  const clipUrl = `${origin}/c/${req.params.token}`;
+  const streamUrl = `${origin}/api/clip/${req.params.token}/stream`;
+  const w = clip.width || 1280;
+  const h = clip.height || 720;
+
+  res.type('html').send(`<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta property="og:type" content="video.other">
+<meta property="og:title" content="${clip.filename || 'Video Clip'}">
+<meta property="og:description" content="${clip.duration ? Math.round(clip.duration) + 's' : 'Video clip'}${clip.size ? ' \u2022 ' + (clip.size / (1024*1024)).toFixed(1) + 'MB' : ''}">
+<meta property="og:url" content="${clipUrl}">
+<meta property="og:video" content="${streamUrl}">
+<meta property="og:video:type" content="video/mp4">
+<meta property="og:video:width" content="${w}">
+<meta property="og:video:height" content="${h}">
+<meta name="twitter:card" content="player">
+<meta name="twitter:player" content="${streamUrl}">
+<meta name="twitter:player:width" content="${w}">
+<meta name="twitter:player:height" content="${h}">
+<meta name="twitter:title" content="${clip.filename || 'Video Clip'}">
+<script>if(!/bot|crawl|spider|slurp|preview/i.test(navigator.userAgent)){location.replace('${clipUrl}/embed')}</script>
+</head></html>`);
+});
+
+app.get('/c/:token/embed', (req, res) => {
+  const ua = req.get('user-agent') || '';
+  if (!CRAWLER_RE.test(ua)) {
+    const indexPath = path.join(__dirname, '..', '..', 'web', 'dist', 'index.html');
+    if (require('fs').existsSync(indexPath)) return res.sendFile(indexPath);
+  }
+  res.redirect(301, '/c/' + req.params.token);
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -146,9 +200,6 @@ app.get('*', (req, res) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`API server running on port ${PORT}`);
   console.log(`Data directory: ${DATA_DIR}`);
-  if (!process.env.ADMIN_JWT_SECRET && process.env.ADMIN_PASSWORD) {
-    console.warn('Warning: ADMIN_JWT_SECRET is not set. Falling back to ADMIN_PASSWORD for JWT signing.');
-  }
 });
 server.timeout = 300000;
 server.headersTimeout = 10000;

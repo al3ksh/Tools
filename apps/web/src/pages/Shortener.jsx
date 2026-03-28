@@ -187,7 +187,7 @@ function Shortener({ sessionId }) {
                       </td>
                       <td>
                         <a
-                          href={link.targetUrl}
+                          href={/^https?:\/\//i.test(link.targetUrl) ? link.targetUrl : undefined}
                           target="_blank"
                           rel="noopener noreferrer"
                           style={{ color: 'var(--accent-text)', textDecoration: 'none' }}

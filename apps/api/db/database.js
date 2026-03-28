@@ -14,6 +14,7 @@ const db = new Database(DB_PATH);
 
 // Enable WAL mode for better concurrency
 db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
 
 // Initialize schema
 const schemaPath = path.join(__dirname, 'schema.sql');
@@ -82,6 +83,20 @@ try {
     console.log('Migration: Added sessionId column to shortlinks');
   }
 
+  if (!shortlinkColNames.includes('expiresAt')) {
+    db.exec('ALTER TABLE shortlinks ADD COLUMN expiresAt TEXT');
+    console.log('Migration: Added expiresAt column to shortlinks');
+  }
+
+  if (!shortlinkColNames.includes('deleted')) {
+    db.exec('ALTER TABLE shortlinks ADD COLUMN deleted INTEGER DEFAULT 0');
+    console.log('Migration: Added deleted column to shortlinks');
+  }
+
+  if (!shortlinkColNames.includes('expiresAt') || !shortlinkColNames.includes('deleted')) {
+    try { db.exec('CREATE INDEX IF NOT EXISTS idx_shortlinks_expires ON shortlinks(expiresAt, deleted)'); } catch (e) {}
+  }
+
   // Clips table migration
   const clipColumns = db.prepare("PRAGMA table_info(clips)").all();
   const clipColumnNames = clipColumns.map(c => c.name);
@@ -119,11 +134,11 @@ const statements = {
   `),
 
   getRecentJobs: db.prepare(`
-    SELECT * FROM jobs ORDER BY createdAt DESC LIMIT ?
+    SELECT * FROM jobs WHERE deleted = 0 ORDER BY createdAt DESC LIMIT ?
   `),
 
   getJobsBySession: db.prepare(`
-    SELECT * FROM jobs WHERE sessionId = ? ORDER BY createdAt DESC LIMIT ?
+    SELECT * FROM jobs WHERE sessionId = ? AND deleted = 0 ORDER BY createdAt DESC LIMIT ?
   `),
 
   updateJobStatus: db.prepare(`
@@ -160,18 +175,18 @@ const statements = {
 
   claimNextJob: db.prepare(`
     UPDATE jobs SET status = 'running', startedAt = ? 
-    WHERE id = (SELECT id FROM jobs WHERE status = 'queued' ORDER BY createdAt ASC LIMIT 1)
+    WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND isCancelling = 0 ORDER BY createdAt ASC LIMIT 1)
     RETURNING *
   `),
 
   // Shortlinks
   createShortlink: db.prepare(`
-    INSERT INTO shortlinks (slug, targetUrl, createdAt, sessionId)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO shortlinks (slug, targetUrl, createdAt, sessionId, expiresAt)
+    VALUES (?, ?, ?, ?, ?)
   `),
 
   getShortlink: db.prepare(`
-    SELECT * FROM shortlinks WHERE slug = ?
+    SELECT * FROM shortlinks WHERE slug = ? AND deleted = 0
   `),
 
   incrementClicks: db.prepare(`
@@ -179,15 +194,23 @@ const statements = {
   `),
 
   getAllShortlinks: db.prepare(`
-    SELECT * FROM shortlinks ORDER BY createdAt DESC
+    SELECT * FROM shortlinks WHERE deleted = 0 ORDER BY createdAt DESC
   `),
 
   getShortlinksBySession: db.prepare(`
-    SELECT * FROM shortlinks WHERE sessionId = ? ORDER BY createdAt DESC
+    SELECT * FROM shortlinks WHERE sessionId = ? AND deleted = 0 ORDER BY createdAt DESC
   `),
 
   deleteShortlink: db.prepare(`
-    DELETE FROM shortlinks WHERE slug = ?
+    UPDATE shortlinks SET deleted = 1 WHERE slug = ?
+  `),
+
+  getExpiredShortlinks: db.prepare(`
+    SELECT * FROM shortlinks WHERE deleted = 0 AND expiresAt IS NOT NULL AND expiresAt < ?
+  `),
+
+  expireShortlink: db.prepare(`
+    UPDATE shortlinks SET deleted = 1 WHERE slug = ?
   `),
 
   // Drops
@@ -205,11 +228,11 @@ const statements = {
   `),
 
   getAllDrops: db.prepare(`
-    SELECT * FROM drops ORDER BY createdAt DESC
+    SELECT * FROM drops WHERE deleted = 0 ORDER BY createdAt DESC
   `),
 
   getDropsBySession: db.prepare(`
-    SELECT * FROM drops WHERE sessionId = ? ORDER BY createdAt DESC
+    SELECT * FROM drops WHERE sessionId = ? AND deleted = 0 ORDER BY createdAt DESC
   `),
 
   expireDrop: db.prepare(`
@@ -232,6 +255,10 @@ const statements = {
 
   getClip: db.prepare(`
     SELECT * FROM clips WHERE token = ?
+  `),
+
+  getClipInfo: db.prepare(`
+    SELECT token, filename, size, duration, width, height, deleted, expiresAt FROM clips WHERE token = ?
   `),
 
   getAllClips: db.prepare(`

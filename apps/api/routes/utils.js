@@ -3,6 +3,8 @@ const dns = require('dns').promises;
 const http = require('http');
 const https = require('https');
 const net = require('net');
+const path = require('path');
+const { statements } = require('../db/database');
 const router = express.Router();
 
 function isPrivateIpv4(ip) {
@@ -15,6 +17,7 @@ function isPrivateIpv4(ip) {
   if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
   if (parts[0] === 192 && parts[1] === 168) return true;
   if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true;
+  if (parts[0] === 198 && parts[1] >= 18 && parts[1] <= 19) return true;
   if (parts[0] === 224) return true;
   if (parts[0] >= 240) return true;
   return false;
@@ -42,6 +45,49 @@ function isBlockedHostname(hostname) {
     host === 'ip6-localhost' ||
     host === 'ip6-loopback' ||
     host.endsWith('.arpa');
+}
+
+function safePath(baseDir, relativePath) {
+  const resolved = path.resolve(baseDir, relativePath);
+  const normalizedBase = path.resolve(baseDir);
+  if (!resolved.startsWith(normalizedBase + path.sep) && resolved !== normalizedBase) {
+    throw new Error('Invalid path');
+  }
+  return resolved;
+}
+
+function setContentDisposition(res, filename) {
+  const encoded = encodeURIComponent(filename).replace(/['()]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, "''");
+  res.setHeader('Content-Disposition', `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`);
+}
+
+function clampNumber(value, min, max, fallback = 0) {
+  const num = Number(value);
+  if (Number.isNaN(num)) return fallback;
+  return Math.min(Math.max(num, min), max);
+}
+
+function checkJobLimit(sessionId, isAdmin) {
+  const MAX_ACTIVE_JOBS = 10;
+  if (isAdmin) return;
+  const total = statements.countActiveJobsTotal.get().count;
+  if (total >= 50) throw new Error('Server queue is full. Please try again later.');
+  if (sessionId) {
+    const userCount = statements.countActiveJobsBySession.get(sessionId).count;
+    if (userCount >= MAX_ACTIVE_JOBS) throw new Error('Too many active jobs. Please wait for current jobs to finish.');
+  }
+}
+
+function createGuestSizeLimit(maxMB) {
+  return (req, res, next) => {
+    if (req.isAdmin) return next();
+    const maxBytes = maxMB * 1024 * 1024;
+    if (req.headers['content-length'] && parseInt(req.headers['content-length']) > maxBytes) {
+      return res.status(413).json({ error: `File too large. Guest limit is ${maxMB}MB.` });
+    }
+    next();
+  };
 }
 
 async function validatePublicUrl(rawUrl) {
@@ -228,3 +274,8 @@ router.get('/preview', async (req, res) => {
 
 module.exports = router;
 module.exports.validatePublicUrl = validatePublicUrl;
+module.exports.safePath = safePath;
+module.exports.setContentDisposition = setContentDisposition;
+module.exports.clampNumber = clampNumber;
+module.exports.checkJobLimit = checkJobLimit;
+module.exports.createGuestSizeLimit = createGuestSizeLimit;

@@ -22,7 +22,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: 500 * 1024 * 1024, fieldSize: 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (file.fieldname === 'images') {
@@ -32,7 +32,7 @@ const upload = multer({
         cb(new Error('Only JPG and PNG images are supported'));
       }
     } else {
-      if (ext === '.pdf' || file.mimetype === 'application/pdf') {
+      if (ext === '.pdf') {
         cb(null, true);
       } else {
         cb(new Error('Only PDF files are allowed'));
@@ -43,7 +43,7 @@ const upload = multer({
 
 const uploadGuest = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024, fieldSize: 1024 * 1024 },
   fileFilter: upload.fileFilter,
 });
 
@@ -114,6 +114,12 @@ router.post('/merge', pdfSizeLimit, getUploader("array", "files", 50), async (re
 
     tempFiles.push(...req.files.map(f => f.path));
 
+    const totalSize = req.files.reduce((sum, f) => sum + f.size, 0);
+    const maxSize = req.isAdmin ? 500 * 1024 * 1024 : 100 * 1024 * 1024;
+    if (totalSize > maxSize) {
+      return res.status(413).json({ error: `Total file size exceeds ${req.isAdmin ? '500MB' : '100MB'} limit.` });
+    }
+
     const mergedPdf = await PDFDocument.create();
 
     for (const file of req.files) {
@@ -145,6 +151,9 @@ router.post('/split', pdfSizeLimit, getUploader("single", "file"), async (req, r
     const pages = JSON.parse(req.body.pages); // 1-based page numbers
     if (!Array.isArray(pages) || pages.length === 0) {
       return res.status(400).json({ error: 'Pages array is required' });
+    }
+    if (!pages.every(p => typeof p === 'number' && Number.isInteger(p) && p >= 1)) {
+      return res.status(400).json({ error: 'Pages must be positive integers' });
     }
 
     const pdfBytes = fs.readFileSync(req.file.path);
@@ -179,7 +188,15 @@ router.post('/rotate', pdfSizeLimit, getUploader("single", "file"), async (req, 
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     tempFiles.push(req.file.path);
 
-    const rotations = JSON.parse(req.body.rotations); // { "pageNum": angle } (1-based)
+    const rotations = JSON.parse(req.body.rotations);
+    if (typeof rotations !== 'object' || rotations === null || Array.isArray(rotations)) {
+      return res.status(400).json({ error: 'Rotations must be an object' });
+    }
+    for (const [pageStr, angle] of Object.entries(rotations)) {
+      if (!Number.isInteger(Number(pageStr)) || typeof angle !== 'number') {
+        return res.status(400).json({ error: 'Invalid rotation format' });
+      }
+    }
 
     const pdfBytes = fs.readFileSync(req.file.path);
     const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
@@ -212,7 +229,13 @@ router.post('/remove-pages', pdfSizeLimit, getUploader("single", "file"), async 
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     tempFiles.push(req.file.path);
 
-    const pages = JSON.parse(req.body.pages); // 1-based page numbers to remove
+    const pages = JSON.parse(req.body.pages);
+    if (!Array.isArray(pages) || pages.length === 0) {
+      return res.status(400).json({ error: 'Pages array is required' });
+    }
+    if (!pages.every(p => typeof p === 'number' && Number.isInteger(p) && p >= 1)) {
+      return res.status(400).json({ error: 'Pages must be positive integers' });
+    }
 
     const pdfBytes = fs.readFileSync(req.file.path);
     const sourcePdf = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
@@ -297,7 +320,13 @@ router.post('/reorder', pdfSizeLimit, getUploader("single", "file"), async (req,
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     tempFiles.push(req.file.path);
 
-    const order = JSON.parse(req.body.order); // array of 1-based page numbers in desired order
+    const order = JSON.parse(req.body.order);
+    if (!Array.isArray(order) || order.length === 0) {
+      return res.status(400).json({ error: 'Order array is required' });
+    }
+    if (!order.every(p => typeof p === 'number' && Number.isInteger(p) && p >= 1)) {
+      return res.status(400).json({ error: 'Order must contain positive integers' });
+    }
 
     const pdfBytes = fs.readFileSync(req.file.path);
     const sourcePdf = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
@@ -330,7 +359,7 @@ router.use((err, req, res, next) => {
     return res.status(400).json({ error: err.message });
   }
   if (err) {
-    return res.status(400).json({ error: err.message });
+    return res.status(400).json({ error: 'Upload failed' });
   }
   next();
 });

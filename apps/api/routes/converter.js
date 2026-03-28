@@ -5,24 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { statements, DATA_DIR } = require('../db/database');
-
-function clampNumber(value, min, max, fallback) {
-  const num = Number(value);
-  if (Number.isNaN(num)) return fallback;
-  return Math.min(Math.max(num, min), max);
-}
-
-const MAX_ACTIVE_JOBS = 10;
-
-function checkJobLimit(sessionId, isAdmin) {
-  if (isAdmin) return;
-  const total = statements.countActiveJobsTotal.get().count;
-  if (total >= 50) throw new Error('Server queue is full. Please try again later.');
-  if (sessionId) {
-    const userCount = statements.countActiveJobsBySession.get(sessionId).count;
-    if (userCount >= MAX_ACTIVE_JOBS) throw new Error('Too many active jobs. Please wait for current jobs to finish.');
-  }
-}
+const { clampNumber, checkJobLimit, createGuestSizeLimit } = require('./utils');
 
 // Configure multer for uploads
 const uploadsDir = path.join(DATA_DIR, 'uploads');
@@ -39,7 +22,7 @@ const storage = multer.diskStorage({
     cb(null, subDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const uniqueSuffix = Date.now() + '-' + require('crypto').randomUUID().replace(/-/g, '').substring(0, 9);
     const ext = path.extname(file.originalname);
     cb(null, uniqueSuffix + ext);
   }
@@ -48,18 +31,8 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 * 1024 } });
 const uploadGuest = multer({ storage, limits: { fileSize: 500 * 1024 * 1024 } });
 
-// Size limit middleware — unlimited for admin, 500MB for guests
-const converterSizeLimit = (req, res, next) => {
-  if (req.isAdmin) return next();
-  const MAX_GUEST = 500 * 1024 * 1024;
-  if (req.headers['content-length'] && parseInt(req.headers['content-length']) > MAX_GUEST) {
-    return res.status(413).json({ error: `File too large. Guest limit is 500MB.` });
-  }
-  next();
-};
-
 // POST /api/upload - upload a file
-router.post('/upload', converterSizeLimit, (req, res, next) => {
+router.post('/upload', createGuestSizeLimit(500), (req, res, next) => {
   const uploader = req.isAdmin ? upload : uploadGuest;
   uploader.single('file')(req, res, (err) => {
     if (err) {
@@ -90,6 +63,10 @@ router.post('/', (req, res) => {
 
     if (!source || !source.type) {
       return res.status(400).json({ error: 'Source type is required' });
+    }
+
+    if (source.type === 'path' && !req.isAdmin) {
+      return res.status(403).json({ error: 'Path source is admin only' });
     }
 
     if (source.type !== 'upload' && source.type !== 'path') {

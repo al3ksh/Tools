@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { QrCode as QrCodeIcon, Download, Upload, Copy, ExternalLink, Settings, CheckCircle, XCircle } from 'lucide-react';
-import { api } from '../api';
+import { api, downloadBlob } from '../api';
 import jsQR from 'jsqr';
 import useToast from '../hooks/useToast';
 
@@ -65,17 +65,6 @@ export default function QRCode() {
     if (!qrSvg) return;
     const blob = new Blob([qrSvg], { type: 'image/svg+xml' });
     downloadBlob(blob, 'qrcode.svg');
-  };
-
-  const downloadBlob = (blob, filename) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   const handleReadFile = (file) => {

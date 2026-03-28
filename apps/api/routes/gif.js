@@ -7,6 +7,7 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const { DATA_DIR } = require('../db/database');
+const { clampNumber } = require('./utils');
 
 const gifRateLimit = rateLimit({
   windowMs: 60 * 1000,
@@ -32,6 +33,10 @@ const upload = multer({
   storage,
   limits: { fileSize: 500 * 1024 * 1024 },
 });
+const uploadGuest = multer({
+  storage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+});
 
 function cleanupFiles(files) {
   for (const file of files) {
@@ -41,12 +46,6 @@ function cleanupFiles(files) {
       // Ignore cleanup failures.
     }
   }
-}
-
-function clampNumber(value, min, max, fallback) {
-  const num = Number(value);
-  if (Number.isNaN(num)) return fallback;
-  return Math.min(Math.max(num, min), max);
 }
 
 function runProcess(command, args, timeoutMs = 120000) {
@@ -93,6 +92,15 @@ function runFfprobe(inputPath) {
     const ffprobe = spawn('ffprobe', args);
     let stdout = '';
     let stderr = '';
+    let resolved = false;
+
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        ffprobe.kill('SIGKILL');
+        reject(new Error('ffprobe timed out'));
+      }
+    }, 30000);
 
     ffprobe.stdout.on('data', (data) => {
       stdout += data.toString();
@@ -103,6 +111,9 @@ function runFfprobe(inputPath) {
     });
 
     ffprobe.on('close', (code) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timer);
       if (code !== 0) {
         reject(new Error(`ffprobe failed: ${stderr}`));
         return;
@@ -115,7 +126,13 @@ function runFfprobe(inputPath) {
       }
     });
 
-    ffprobe.on('error', (err) => reject(err));
+    ffprobe.on('error', (err) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        reject(err);
+      }
+    });
   });
 }
 
@@ -142,7 +159,18 @@ function buildFilterChain({ fps, width, speed, reverse }) {
 }
 
 // POST /api/gif/info - get media metadata for GIF/video input
-router.post('/info', upload.single('file'), async (req, res) => {
+router.post('/info', gifRateLimit, (req, res, next) => {
+  const uploader = req.isAdmin ? upload : uploadGuest;
+  uploader.single('file')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'File too large. Guest limit is 100MB.' });
+      }
+      return res.status(400).json({ error: 'Upload failed' });
+    }
+    next();
+  });
+}, async (req, res) => {
   const tempFiles = [];
 
   try {
@@ -175,7 +203,18 @@ router.post('/info', upload.single('file'), async (req, res) => {
 });
 
 // POST /api/gif/process - create/edit GIF from uploaded video or GIF
-router.post('/process', gifRateLimit, upload.single('file'), async (req, res) => {
+router.post('/process', gifRateLimit, (req, res, next) => {
+  const uploader = req.isAdmin ? upload : uploadGuest;
+  uploader.single('file')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'File too large. Guest limit is 100MB.' });
+      }
+      return res.status(400).json({ error: 'Upload failed' });
+    }
+    next();
+  });
+}, async (req, res) => {
   const tempFiles = [];
 
   try {
@@ -239,7 +278,13 @@ router.post('/process', gifRateLimit, upload.single('file'), async (req, res) =>
     res.setHeader('Content-Type', 'image/gif');
     res.setHeader('Content-Disposition', `attachment; filename="${preview ? 'preview' : 'output'}.gif"`);
     res.setHeader('X-Output-Size', String(stat.size));
-    res.send(fs.readFileSync(outputPath));
+    const filesToClean = [...tempFiles];
+    res.sendFile(outputPath, (err) => {
+      cleanupFiles(filesToClean);
+      if (err) console.error('Send error:', err.message);
+    });
+    tempFiles.length = 0;
+    return;
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   } finally {

@@ -23,14 +23,17 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   const [sessionId] = useState(() => {
-    // Guest gets a unique persistent session
     const stored = localStorage.getItem('tools_session');
     if (stored) {
-      const parsed = JSON.parse(stored);
-      const id = parsed.id || parsed;
-      if (id) return id;
+      try {
+        const parsed = JSON.parse(stored);
+        const id = parsed.id || parsed;
+        if (id) return id;
+      } catch (e) {
+        localStorage.removeItem('tools_session');
+      }
     }
-    const newId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const newId = crypto.randomUUID();
     localStorage.setItem('tools_session', JSON.stringify({ id: newId }));
     return newId;
   });
@@ -279,18 +282,18 @@ function App() {
           <main className="main-content">
             <ErrorBoundary>
               <Routes>
-              <Route path="/" element={<Dashboard sessionId={sessionId} />} />
+              <Route path="/" element={<Dashboard sessionId={sessionId} isAdmin={isAdmin} />} />
               <Route path="/downloader" element={<Downloader sessionId={sessionId} />} />
-              <Route path="/converter" element={<Converter sessionId={sessionId} />} />
+              <Route path="/converter" element={<Converter sessionId={sessionId} isAdmin={isAdmin} />} />
               <Route path="/shortener" element={<Shortener sessionId={sessionId} />} />
-              <Route path="/drop" element={<Drop sessionId={sessionId} />} />
+              <Route path="/drop" element={<Drop sessionId={sessionId} isAdmin={isAdmin} />} />
               <Route path="/qr" element={<QRCode />} />
-              <Route path="/pdf" element={<PDFEditor />} />
-              <Route path="/gif" element={<GifMaker />} />
-              <Route path="/clips" element={<Clips sessionId={sessionId} />} />
+              <Route path="/pdf" element={<PDFEditor isAdmin={isAdmin} />} />
+              <Route path="/gif" element={<GifMaker isAdmin={isAdmin} />} />
+              <Route path="/clips" element={<Clips sessionId={sessionId} isAdmin={isAdmin} />} />
               <Route path="/d/:token" element={<DropView />} />
               <Route path="/c/:token/embed" element={<ClipEmbed />} />
-              <Route path="/c/:token" element={<ClipView />} />
+              <Route path="/c/:token" element={<ClipView isAdmin={isAdmin} />} />
               {isAdmin && <Route path="/admin" element={<AdminPanel />} />}
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="*" element={<NotFound />} />

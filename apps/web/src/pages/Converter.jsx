@@ -9,7 +9,7 @@ import FileUploader from '../components/FileUploader';
 import useToast from '../hooks/useToast';
 import useConfirm from '../hooks/useConfirm';
 
-function Converter({ sessionId }) {
+function Converter({ sessionId, isAdmin }) {
   const [formData, setFormData] = useState({
     format: 'mp3',
     preset: 'medium',
@@ -22,7 +22,6 @@ function Converter({ sessionId }) {
   const [uploading, setUploading] = useState(false);
   const [uploadedPath, setUploadedPath] = useState('');
   const [selectedFile, setSelectedFile] = useState('');
-  const [wavSrc, setWavSrc] = useState('');
   const audioRef = useRef(null);
   const [toast, showToast] = useToast();
   const [confirm, ConfirmDialog] = useConfirm();
@@ -108,7 +107,6 @@ function Converter({ sessionId }) {
   const playWavPreview = async (jobId) => {
     try {
       const wavUrl = getFileUrl(jobId, 'preview.wav');
-      setWavSrc(wavUrl);
       if (audioRef.current) {
         audioRef.current.src = wavUrl;
         audioRef.current.play();
@@ -120,7 +118,7 @@ function Converter({ sessionId }) {
 
   const handleDelete = async (jobId) => {
     try {
-      await api.deleteJob(jobId);
+      await api.deleteJob(jobId, sessionId);
       showToast('Job deleted');
       fetchJobs();
     } catch (err) {
@@ -130,7 +128,7 @@ function Converter({ sessionId }) {
 
   const handleCancel = async (jobId) => {
     try {
-      await api.cancelJob(jobId);
+      await api.cancelJob(jobId, sessionId);
       showToast('Cancellation requested', 'info');
       fetchJobs();
     } catch (err) {
@@ -166,7 +164,7 @@ function Converter({ sessionId }) {
                 maxSizeMB={100}
                 accept="video/*,audio/*,.flac,.m4a,.webm"
                 selectedFile={selectedFile}
-                noLimit={!!localStorage.getItem('adminToken')}
+                noLimit={isAdmin}
               />
 
               <button
@@ -339,7 +337,7 @@ function Converter({ sessionId }) {
                           {job.status === 'done' && job.outputJson?.files?.length > 0 && (
                             <>
                               <a
-                                href={getFileUrl(job.id)}
+                                href={getFileUrl(job.id, undefined, sessionId)}
                                 className="btn btn-success btn-sm"
                               >
                                 <Download size={14} /> Download

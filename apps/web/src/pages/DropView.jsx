@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Download, FileBox, AlertCircle, ArrowLeft, File as FileIcon, Lock, KeyRound, XCircle, Eye, EyeOff } from 'lucide-react';
-import { api, getDropUrl, formatBytes, formatDate } from '../api';
+import { api, getDropUrl, formatBytes, formatDate, downloadBlob } from '../api';
 import useToast from '../hooks/useToast';
 
 function DropView() {
@@ -13,6 +13,7 @@ function DropView() {
     const [passwordError, setPasswordError] = useState('');
     const [downloading, setDownloading] = useState(false);
     const [unlocked, setUnlocked] = useState(false);
+    const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
     const [showPassword, setShowPassword] = useState(false);
     const [toast, showToast] = useToast();
 
@@ -30,16 +31,11 @@ function DropView() {
         fetchInfo();
     }, [token]);
 
-    const triggerDownload = (blob, filename) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    };
+    useEffect(() => {
+        return () => {
+            if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+        };
+    }, [previewBlobUrl]);
 
     const handleDownload = async () => {
         if (info.hasPassword && !unlocked) {
@@ -52,7 +48,9 @@ function DropView() {
             try {
                 const { blob, filename } = await api.downloadDrop(token, password);
                 setUnlocked(true);
-                triggerDownload(blob, filename);
+                if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+                setPreviewBlobUrl(URL.createObjectURL(blob));
+                downloadBlob(blob, filename);
             } catch (err) {
                 setPasswordError(err.message);
             } finally {
@@ -61,7 +59,7 @@ function DropView() {
         } else {
             try {
                 const { blob, filename } = await api.downloadDrop(token);
-                triggerDownload(blob, filename);
+                downloadBlob(blob, filename);
             } catch (err) {
                 showToast(err.message, 'error');
             }
@@ -95,7 +93,7 @@ function DropView() {
     const isVideo = /\.(mp4|webm|ogg)$/i.test(info.filename);
     const isAudio = /\.(mp3|wav|ogg|flac)$/i.test(info.filename);
     const needsPassword = info.hasPassword && !unlocked;
-    const previewUrl = needsPassword ? null : getDropUrl(info.token);
+    const previewUrl = previewBlobUrl || (needsPassword ? null : getDropUrl(info.token));
 
     return (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '30px 20px', width: '100%' }}>

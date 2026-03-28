@@ -3,8 +3,10 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { spawn, execSync } = require('child_process');
+const { spawn } = require('child_process');
 const { statements, DATA_DIR } = require('../db/database');
+const { safePath } = require('./utils');
+const rateLimit = require('express-rate-limit');
 
 const CLIPS_DIR = path.join(DATA_DIR, 'clips');
 const CHUNKS_DIR = path.join(DATA_DIR, 'clips-temp');
@@ -22,16 +24,20 @@ const MIME_TYPES = {
   '.mkv': 'video/x-matroska',
 };
 
-function safePath(baseDir, relativePath) {
-  const resolved = path.resolve(baseDir, relativePath);
-  const normalizedBase = path.resolve(baseDir);
-  if (!resolved.startsWith(normalizedBase + path.sep) && resolved !== normalizedBase) {
-    throw new Error('Invalid path');
-  }
-  return resolved;
-}
+const uploadSizes = new Map();
+setInterval(() => {
+  if (uploadSizes.size > 1000) uploadSizes.clear();
+}, 60 * 60 * 1000);
 
-router.post('/upload-chunk', (req, res) => {
+const chunkRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many upload requests. Please slow down.' },
+});
+
+router.post('/upload-chunk', chunkRateLimit, (req, res) => {
   try {
     const uploadId = req.headers['x-upload-id'];
     if (!uploadId) return res.status(400).json({ error: 'Missing X-Upload-Id header' });
@@ -49,6 +55,14 @@ router.post('/upload-chunk', (req, res) => {
     if (!req.isAdmin && total > MAX_GUEST) {
       return res.status(413).json({ error: `File too large. Guest limit is 200MB.` });
     }
+
+    const chunkSize = end - start + 1;
+    const currentTotal = uploadSizes.get(uploadId) || 0;
+    const newTotal = currentTotal + chunkSize;
+    if (!req.isAdmin && newTotal > MAX_GUEST) {
+      return res.status(413).json({ error: `File too large. Guest limit is 200MB.` });
+    }
+    uploadSizes.set(uploadId, newTotal);
 
     const uploadDir = safePath(CHUNKS_DIR, uploadId);
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -71,6 +85,8 @@ router.post('/upload-chunk', (req, res) => {
 
 router.post('/finalize', (req, res) => {
   try {
+    uploadSizes.delete(req.body.uploadId);
+
     const { uploadId, filename, sessionId, trimStart, trimEnd, duration } = req.body;
 
     if (!uploadId || !filename) {
@@ -82,12 +98,19 @@ router.post('/finalize', (req, res) => {
       return res.status(400).json({ error: 'Upload not found' });
     }
 
+    const processingDir = uploadDir + '_processing';
+    try {
+      fs.renameSync(uploadDir, processingDir);
+    } catch (e) {
+      return res.status(409).json({ error: 'Upload already being processed' });
+    }
+
     const token = uuidv4().substring(0, 12);
     const ext = path.extname(filename).toLowerCase() || '.mp4';
     const outputPath = path.join(CLIPS_DIR, `${token}${ext}`);
     const tempPath = path.join(CHUNKS_DIR, `${uploadId}_merged${ext}`);
 
-    const chunks = fs.readdirSync(uploadDir)
+    const chunks = fs.readdirSync(processingDir)
       .filter(f => f.endsWith('.chunk'))
       .sort((a, b) => {
         const aStart = parseInt(a.split('-')[0]);
@@ -100,18 +123,30 @@ router.post('/finalize', (req, res) => {
     }
 
     const writeStream = fs.createWriteStream(tempPath);
-    for (const chunkFile of chunks) {
-      const chunkData = fs.readFileSync(path.join(uploadDir, chunkFile));
-      writeStream.write(chunkData);
+    writeStream.on('error', () => {
+      res.status(500).json({ error: 'Internal server error' });
+    });
+
+    let merged = 0;
+    function mergeNext() {
+      if (merged >= chunks.length) {
+        writeStream.end();
+        return;
+      }
+      const chunkData = fs.readFileSync(path.join(processingDir, chunks[merged]));
+      writeStream.write(chunkData, () => {
+        merged++;
+        mergeNext();
+      });
     }
-    writeStream.end();
+    mergeNext();
 
     writeStream.on('finish', () => {
       try {
         for (const chunkFile of chunks) {
-          fs.unlinkSync(path.join(uploadDir, chunkFile));
+          fs.unlinkSync(path.join(processingDir, chunkFile));
         }
-        fs.rmdirSync(uploadDir);
+        fs.rmdirSync(processingDir);
       } catch (e) { }
 
       const needsTrim = (trimStart != null && trimStart > 0) || (trimEnd != null && duration != null && trimEnd < duration);
@@ -125,23 +160,44 @@ router.post('/finalize', (req, res) => {
         if (to != null && to > ss) args.push('-to', String(to));
         args.push('-c', 'copy', '-avoid_negative_ts', 'make_zero', outputPath);
 
+        let responded = false;
         const ffmpeg = spawn('ffmpeg', args);
-        ffmpeg.stderr.on('data', () => {});
+        ffmpeg.stderr.on('data', (data) => {
+          console.log('[clip trim]', String(data).trim());
+        });
 
-        ffmpeg.on('close', (code) => {
+        const trimTimeout = setTimeout(() => {
+          ffmpeg.kill('SIGKILL');
+        }, 10 * 60 * 1000);
+
+        ffmpeg.on('close', (code, signal) => {
+          clearTimeout(trimTimeout);
           try { fs.unlinkSync(tempPath); } catch (e) { }
 
+          if (responded) return;
+
+          if (signal === 'SIGKILL') {
+            responded = true;
+            return res.status(504).json({ error: 'Video trimming timed out' });
+          }
+
           if (code !== 0 || !fs.existsSync(outputPath)) {
+            responded = true;
             return res.status(500).json({ error: 'Video trimming failed' });
           }
 
+          responded = true;
           const trimmedDuration = to != null ? to - ss : duration;
           finishClip(outputPath, token, ext, filename, sessionId, trimmedDuration, req, res);
         });
 
         ffmpeg.on('error', () => {
+          clearTimeout(trimTimeout);
           try { fs.unlinkSync(tempPath); } catch (e) { }
-          res.status(500).json({ error: 'FFmpeg not available' });
+          if (!responded) {
+            responded = true;
+            res.status(500).json({ error: 'FFmpeg not available' });
+          }
         });
       } else {
         try {
@@ -159,10 +215,6 @@ router.post('/finalize', (req, res) => {
         finishClip(outputPath, token, ext, filename, sessionId, duration, req, res);
       }
     });
-
-    writeStream.on('error', () => {
-      res.status(500).json({ error: 'Internal server error' });
-    });
   } catch (err) {
     if (err.message === 'Invalid path') return res.status(400).json({ error: 'Invalid upload' });
     res.status(500).json({ error: 'Internal server error' });
@@ -170,30 +222,55 @@ router.post('/finalize', (req, res) => {
 });
 
 function getVideoMeta(filePath) {
-  try {
-    const out = execSync(
-      `ffprobe -v quiet -print_format json -show_streams -show_format "${filePath}"`,
-      { timeout: 10000, encoding: 'utf-8' }
-    );
-    const data = JSON.parse(out);
-    const video = (data.streams || []).find(s => s.codec_type === 'video');
-    const audio = (data.streams || []).find(s => s.codec_type === 'audio');
-    return {
-      width: video ? video.width : null,
-      height: video ? video.height : null,
-      fps: video && video.r_frame_rate ? parseFloat(video.r_frame_rate) : null,
-      bitrate: data.format && data.format.bit_rate ? parseInt(data.format.bit_rate) : null,
-      videoCodec: video ? video.codec_name : null,
-      audioCodec: audio ? audio.codec_name : null,
-    };
-  } catch (e) {
-    return null;
-  }
+  return new Promise((resolve) => {
+    const ffprobe = spawn('ffprobe', [
+      '-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', filePath
+    ]);
+    let stdout = '';
+    let resolved = false;
+
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        ffprobe.kill('SIGKILL');
+        resolve(null);
+      }
+    }, 30000);
+
+    ffprobe.stdout.on('data', (d) => { stdout += d; });
+    ffprobe.on('close', () => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timer);
+      try {
+        const data = JSON.parse(stdout);
+        const video = (data.streams || []).find(s => s.codec_type === 'video');
+        const audio = (data.streams || []).find(s => s.codec_type === 'audio');
+        resolve({
+          width: video ? video.width : null,
+          height: video ? video.height : null,
+          fps: video && video.r_frame_rate ? parseFloat(video.r_frame_rate) : null,
+          bitrate: data.format && data.format.bit_rate ? parseInt(data.format.bit_rate) : null,
+          videoCodec: video ? video.codec_name : null,
+          audioCodec: audio ? audio.codec_name : null,
+        });
+      } catch (e) {
+        resolve(null);
+      }
+    });
+    ffprobe.on('error', () => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timer);
+        resolve(null);
+      }
+    });
+  });
 }
 
-function finishClip(outputPath, token, ext, filename, sessionId, duration, req, res) {
+async function finishClip(outputPath, token, ext, filename, sessionId, duration, req, res) {
   try {
-    const meta = getVideoMeta(outputPath);
+    const meta = await getVideoMeta(outputPath);
     const stat = fs.statSync(outputPath);
     const createdAt = new Date().toISOString();
     let expiresAt = null;
@@ -201,7 +278,7 @@ function finishClip(outputPath, token, ext, filename, sessionId, duration, req, 
       expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     }
 
-    const actualDuration = duration || (meta && null);
+    const actualDuration = duration || (meta && meta.duration) || 0;
     statements.createClip.run(
       token,
       filename,
@@ -310,7 +387,6 @@ router.get('/:token/info', (req, res) => {
       downloads: clip.downloads,
       createdAt: clip.createdAt,
       expiresAt: clip.expiresAt,
-      sessionId: clip.sessionId,
     });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
@@ -345,7 +421,7 @@ router.delete('/:token', (req, res) => {
       return res.status(404).json({ error: 'Clip not found' });
     }
 
-    if (!req.isAdmin && clip.sessionId !== req.body.sessionId) {
+    if (!req.isAdmin && (!clip.sessionId || clip.sessionId !== req.body.sessionId)) {
       return res.status(403).json({ error: 'Not your clip' });
     }
 
@@ -366,7 +442,7 @@ router.get('/upload-status', (req, res) => {
     const uploadId = req.query.uploadId;
     if (!uploadId) return res.status(400).json({ error: 'Missing uploadId' });
 
-    const uploadDir = path.join(CHUNKS_DIR, uploadId);
+    const uploadDir = safePath(CHUNKS_DIR, uploadId);
     if (!fs.existsSync(uploadDir)) return res.json({ chunks: [] });
 
     const chunks = fs.readdirSync(uploadDir)
@@ -379,6 +455,7 @@ router.get('/upload-status', (req, res) => {
 
     res.json({ chunks });
   } catch (err) {
+    if (err.message === 'Invalid path') return res.status(400).json({ error: 'Invalid upload' });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

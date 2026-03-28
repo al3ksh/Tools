@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Files, Upload, Layers, Scissors, RotateCw, Trash2, Image, X, Clock, Download, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Eye, GripVertical, RotateCcw, File as FileIcon } from 'lucide-react';
-import { api, formatBytes } from '../api';
+import { api, formatBytes, downloadBlob } from '../api';
 import * as pdfjsLib from 'pdfjs-dist';
 import FileUploader from '../components/FileUploader';
 import useToast from '../hooks/useToast';
@@ -154,7 +154,7 @@ const MODES = [
   { id: 'images', label: 'Images → PDF', icon: Image, desc: 'Convert images to PDF' },
 ];
 
-export default function PDFEditor() {
+export default function PDFEditor({ isAdmin }) {
   const [mode, setMode] = useState('edit');
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfDoc, setPdfDoc] = useState(null);
@@ -177,17 +177,6 @@ export default function PDFEditor() {
   const [toast, showToast] = useToast();
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
-
-  const downloadBlob = (blob, filename) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
 
   // ===== VISUAL EDITOR =====
   const loadPdf = useCallback(async (file) => {
@@ -471,7 +460,7 @@ export default function PDFEditor() {
                     maxSizeMB={100}
                     accept="application/pdf"
                     selectedFile={pdfFile}
-                    noLimit={!!localStorage.getItem('adminToken')}
+                    noLimit={isAdmin}
                   />
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)', opacity: 0.6, marginTop: '-6px' }}>
                     View pages, drag to reorder, rotate and remove, then download.

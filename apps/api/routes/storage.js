@@ -15,7 +15,7 @@ function getDirectorySize(dirPath) {
 
   for (const file of files) {
     const filePath = path.join(dirPath, file);
-    const stat = fs.statSync(filePath);
+    const stat = fs.lstatSync(filePath);
 
     if (stat.isDirectory()) {
       size += getDirectorySize(filePath);
@@ -28,7 +28,7 @@ function getDirectorySize(dirPath) {
 }
 
 function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
+  if (bytes <= 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));

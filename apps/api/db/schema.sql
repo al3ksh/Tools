@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS shortlinks (
   targetUrl TEXT NOT NULL,
   createdAt TEXT NOT NULL,
   clicks INTEGER DEFAULT 0,
-  sessionId TEXT
+  sessionId TEXT,
+  expiresAt TEXT,
+  deleted INTEGER DEFAULT 0
 );
 
 -- Drops table

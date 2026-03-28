@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { api, formatBytes, formatDate, getDropUrl } from '../api';
+import { api, formatBytes, formatDate, getDropUrl, downloadBlob } from '../api';
 import { FolderOpen, Upload, CheckCircle, Copy, Clock, List, Download, ClipboardList, XCircle, FileBox, Lock, Eye, EyeOff, KeyRound } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import FileUploader from '../components/FileUploader';
 import useToast from '../hooks/useToast';
 
-function Drop({ sessionId }) {
+function Drop({ sessionId, isAdmin }) {
   const [file, setFile] = useState(null);
   const [drops, setDrops] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -51,21 +51,7 @@ function Drop({ sessionId }) {
     setCreatedDrop(null);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      if (sessionId) formData.append('sessionId', sessionId);
-      if (uploadPassword.trim()) formData.append('password', uploadPassword.trim());
-
-      const response = await fetch(`${window.location.origin}/api/drop/upload`, {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: 'Upload failed' }));
-        throw new Error(err.error || 'Upload failed');
-      }
-      const result = await response.json();
+      const result = await api.uploadDrop(file, sessionId, uploadPassword.trim());
       setCreatedDrop(result);
       setFile(null);
       setUploadPassword('');
@@ -78,17 +64,6 @@ function Drop({ sessionId }) {
     }
   };
 
-  const triggerDownload = (blob, filename) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   const handleDownload = async (drop) => {
     if (drop.hasPassword) {
       setPasswordModal(drop);
@@ -98,9 +73,9 @@ function Drop({ sessionId }) {
     }
     try {
       const { blob, filename } = await api.downloadDrop(drop.token);
-      triggerDownload(blob, filename);
+      downloadBlob(blob, filename);
     } catch (err) {
-      if (err.message === 'PASSWORD_REQUIRED') {
+      if (err.message === 'Password required' || err.message === 'PASSWORD_REQUIRED') {
         setPasswordModal(drop);
         setDownloadPassword('');
         setDownloadError('');
@@ -117,7 +92,7 @@ function Drop({ sessionId }) {
     try {
       const { blob, filename } = await api.downloadDrop(passwordModal.token, downloadPassword);
       setPasswordModal(null);
-      triggerDownload(blob, filename);
+      downloadBlob(blob, filename);
     } catch (err) {
       setDownloadError(err.message);
     } finally {
@@ -160,9 +135,9 @@ function Drop({ sessionId }) {
                   maxSizeMB={50}
                   accept="*"
                   selectedFile={file}
-                  noLimit={!!localStorage.getItem('adminToken')}
+                  noLimit={isAdmin}
                 />
-                <div className="form-help">{localStorage.getItem('adminToken') ? 'Admin: No size limit' : 'Maximum file size: 50MB'}</div>
+                <div className="form-help">{isAdmin ? 'Admin: No size limit' : 'Maximum file size: 50MB'}</div>
               </div>
 
               <div className="form-group">

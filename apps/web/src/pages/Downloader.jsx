@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api, formatDate, getFileUrl, PRESETS } from '../api';
 import { Download, Film, Clock, List, CheckCircle, XCircle, Trash2, ClipboardList, Inbox, XSquare, Link as LinkIcon, Youtube, ImageOff } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
@@ -64,6 +64,8 @@ function Downloader({ sessionId }) {
     return () => clearTimeout(timer);
   }, [url, ytId]);
 
+  const initialLoad = useRef(true);
+
   const fetchJobs = async () => {
     try {
       const allJobs = await api.getJobs(sessionId);
@@ -72,7 +74,10 @@ function Downloader({ sessionId }) {
       console.error('Failed to fetch jobs:', err);
       showToast('Failed to fetch data', 'error');
     } finally {
-      setLoading(false);
+      if (initialLoad.current) {
+        setLoading(false);
+        initialLoad.current = false;
+      }
     }
   };
 
@@ -103,7 +108,7 @@ function Downloader({ sessionId }) {
 
   const handleDelete = async (jobId) => {
     try {
-      await api.deleteJob(jobId);
+      await api.deleteJob(jobId, sessionId);
       showToast('Job deleted');
       fetchJobs();
     } catch (err) {
@@ -113,7 +118,7 @@ function Downloader({ sessionId }) {
 
   const handleCancel = async (jobId) => {
     try {
-      await api.cancelJob(jobId);
+      await api.cancelJob(jobId, sessionId);
       showToast('Cancellation requested', 'info');
       fetchJobs();
     } catch (err) {
@@ -315,7 +320,7 @@ function Downloader({ sessionId }) {
                         <td>
                           {job.status === 'done' && job.outputJson?.files?.length > 0 && (
                             <a
-                              href={getFileUrl(job.id)}
+                              href={getFileUrl(job.id, undefined, sessionId)}
                               className="btn btn-success btn-sm"
                             >
                               <Download size={14} /> Download

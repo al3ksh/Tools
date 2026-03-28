@@ -3,24 +3,10 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const { statements, DATA_DIR } = require('../db/database');
+const { safePath, setContentDisposition } = require('./utils');
 
 const ALLOWED_DIRS = ['downloads', 'converted', 'uploads'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function setContentDisposition(res, filename) {
-  const encoded = encodeURIComponent(filename).replace(/['()]/g, escape);
-  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, "''");
-  res.setHeader('Content-Disposition', `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`);
-}
-
-function safePath(baseDir, relativePath) {
-  const resolved = path.resolve(baseDir, relativePath);
-  const normalizedBase = path.resolve(baseDir);
-  if (!resolved.startsWith(normalizedBase + path.sep) && resolved !== normalizedBase) {
-    throw new Error('Invalid path');
-  }
-  return resolved;
-}
 
 function isValidJobId(jobId) {
   if (!jobId || typeof jobId !== 'string') return false;
