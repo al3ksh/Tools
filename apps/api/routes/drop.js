@@ -79,6 +79,10 @@ router.post('/upload', dropSizeLimit, (req, res, next) => {
 
     statements.createDrop.run(token, req.file.originalname, relativePath, req.file.size, createdAt, expiresAt, sessionId, password);
 
+    if (sessionId && !req.isAdmin) {
+      try { statements.addSessionUsage.run(sessionId, req.file.size, req.file.size); } catch (e) {}
+    }
+
     const protocol = req.protocol;
     const host = req.get('host');
     const url = `${protocol}://${host}/d/${token}`;

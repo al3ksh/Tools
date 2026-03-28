@@ -109,6 +109,12 @@ try {
       }
     }
   }
+
+  const sessionUsageTable = db.prepare("PRAGMA table_info(session_usage)").all();
+  if (sessionUsageTable.length === 0) {
+    db.exec(`CREATE TABLE IF NOT EXISTS session_usage (sessionId TEXT PRIMARY KEY, totalBytes INTEGER NOT NULL DEFAULT 0)`);
+    console.log('Migration: Created session_usage table');
+  }
 } catch (err) {
   console.error('Migration error:', err);
 }
@@ -283,6 +289,15 @@ const statements = {
 
   getExpiredClips: db.prepare(`
     SELECT * FROM clips WHERE deleted = 0 AND expiresAt < ?
+  `),
+
+  addSessionUsage: db.prepare(`
+    INSERT INTO session_usage (sessionId, totalBytes) VALUES (?, ?)
+    ON CONFLICT(sessionId) DO UPDATE SET totalBytes = totalBytes + ?
+  `),
+
+  getSessionUsage: db.prepare(`
+    SELECT totalBytes FROM session_usage WHERE sessionId = ?
   `)
 };
 

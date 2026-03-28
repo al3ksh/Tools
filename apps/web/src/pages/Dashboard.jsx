@@ -18,7 +18,7 @@ function Dashboard({ sessionId, isAdmin }) {
     try {
       const [jobsData, storageData] = await Promise.all([
         api.getJobs(sessionId),
-        isAdmin ? api.getStorage().catch(() => null) : Promise.resolve(null)
+        api.getStorage(sessionId).catch(() => null)
       ]);
       setJobs(jobsData);
       setStorage(storageData);
@@ -46,8 +46,6 @@ function Dashboard({ sessionId, isAdmin }) {
     done: jobs.filter(j => j.status === 'done').length,
     failed: jobs.filter(j => j.status === 'failed').length,
   }), [jobs, myJobs]);
-
-  const totalStorage = storage?.total?.bytes || 0;
 
   return (
     <>
@@ -143,13 +141,30 @@ function Dashboard({ sessionId, isAdmin }) {
         {storage && (
           <div className="card">
             <div className="card-header">
-              <div className="card-title"><Database size={18} /> Storage Usage</div>
-              <div className="stat-info">{storage.total.formatted}</div>
+              <div className="card-title"><Database size={18} /> {isAdmin ? 'Storage Usage' : 'Your Usage'}</div>
+              {storage.total && <div className="stat-info">{storage.total.formatted}</div>}
             </div>
             <div className="card-body">
+              {isAdmin && storage.disk && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                    <span>Disk</span>
+                    <span>{storage.disk.usedFormatted} / {storage.disk.totalFormatted} ({storage.disk.usedPercent}%)</span>
+                  </div>
+                  <div className="progress-bar" style={{ height: '8px' }}>
+                    <div className="progress-fill" style={{
+                      width: `${Math.min(storage.disk.usedPercent, 100)}%`,
+                      backgroundColor: storage.disk.usedPercent > 90 ? 'var(--error)' : storage.disk.usedPercent > 70 ? 'var(--warning)' : 'var(--accent)'
+                    }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    <span>Free: {storage.disk.availableFormatted}</span>
+                  </div>
+                </div>
+              )}
               <div className="storage-bar">
-                {Object.entries(storage.directories).map(([dir, info]) => {
-                  const percent = totalStorage > 0 ? (info.bytes / totalStorage) * 100 : 0;
+                {Object.entries(storage.directories || {}).map(([dir, info]) => {
+                  const percent = storage.total.bytes > 0 ? (info.bytes / storage.total.bytes) * 100 : 0;
                   if (percent < 1) return null;
                   return (
                     <div
@@ -162,12 +177,13 @@ function Dashboard({ sessionId, isAdmin }) {
                 })}
               </div>
               <div className="storage-legend">
-                {Object.entries(storage.directories).map(([dir, info]) => (
+                {Object.entries(storage.directories || {}).map(([dir, info]) => (
                   <div key={dir} className="storage-legend-item">
                     <div className={`storage-legend-color`} style={{
                       background: dir === 'downloads' ? 'var(--accent)' :
                         dir === 'converted' ? 'var(--success)' :
-                          dir === 'uploads' ? 'var(--warning)' : 'var(--error)'
+                          dir === 'clips' ? '#a78bfa' :
+                            dir === 'uploads' ? 'var(--warning)' : 'var(--error)'
                     }} />
                     <span>{dir}: {info.formatted}</span>
                   </div>

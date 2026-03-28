@@ -28,6 +28,13 @@ const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('busy_timeout = 5000');
 
+try {
+  const sessionUsageTable = db.prepare("PRAGMA table_info(session_usage)").all();
+  if (sessionUsageTable.length === 0) {
+    db.exec(`CREATE TABLE IF NOT EXISTS session_usage (sessionId TEXT PRIMARY KEY, totalBytes INTEGER NOT NULL DEFAULT 0)`);
+  }
+} catch (e) {}
+
 db.prepare(`UPDATE jobs SET status = 'failed', error = 'Worker restarted', finishedAt = ? WHERE status = 'running'`)
   .run(new Date().toISOString());
 console.log('Reset orphaned running jobs from previous session');
@@ -68,6 +75,10 @@ const selectExpiredShortlinks = db.prepare(`
   SELECT * FROM shortlinks WHERE deleted = 0 AND expiresAt IS NOT NULL AND expiresAt < ?
 `);
 const expireShortlink = db.prepare(`UPDATE shortlinks SET deleted = 1 WHERE slug = ?`);
+const addSessionUsage = db.prepare(`
+  INSERT INTO session_usage (sessionId, totalBytes) VALUES (?, ?)
+  ON CONFLICT(sessionId) DO UPDATE SET totalBytes = totalBytes + ?
+`);
 const selectCancellingJobs = db.prepare(`
   SELECT id FROM jobs WHERE isCancelling = 1 AND status IN ('queued', 'running')
 `);
@@ -80,9 +91,16 @@ function updateProgress(jobId, progress, logsTail) {
   updateJobProgress.run(progress, logsTail, jobId);
 }
 
-function finishWithSuccess(jobId, outputJson, isAdmin = false) {
+function finishWithSuccess(jobId, outputJson, isAdmin = false, sessionId = null) {
   const expiresAt = isAdmin ? null : new Date(Date.now() + 60 * 60 * 1000).toISOString();
   finishJob.run('done', new Date().toISOString(), JSON.stringify(outputJson), null, expiresAt, jobId);
+
+  if (sessionId && outputJson && outputJson.files) {
+    const bytes = outputJson.files.reduce((sum, f) => sum + (f.size || 0), 0);
+    if (bytes > 0) {
+      try { addSessionUsage.run(sessionId, bytes, bytes); } catch (e) {}
+    }
+  }
 }
 
 function finishWithError(jobId, error) {
@@ -209,7 +227,7 @@ async function processDownloadJob(job) {
           });
 
           updateProgress(jobId, 100, logsTail);
-          finishWithSuccess(jobId, { files }, isAdmin);
+          finishWithSuccess(jobId, { files }, isAdmin, job.sessionId);
           resolve();
         } catch (e) {
           finishWithError(jobId, 'Failed to process output');
@@ -341,7 +359,7 @@ async function processConvertJob(job) {
               path: `converted/${jobId}/output.${outputExt}`,
               size: stat.size
             }]
-          }, isAdmin);
+          }, isAdmin, job.sessionId);
           if (source.type === 'upload' && source.path) {
             try {
               const uploadPath = safePath(DATA_DIR, source.path);

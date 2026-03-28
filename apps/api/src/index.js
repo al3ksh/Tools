@@ -165,17 +165,18 @@ app.get('/c/:token', (req, res) => {
 <meta name="twitter:player:width" content="${w}">
 <meta name="twitter:player:height" content="${h}">
 <meta name="twitter:title" content="${clip.filename || 'Video Clip'}">
-<script>if(!/bot|crawl|spider|slurp|preview/i.test(navigator.userAgent)){location.replace('${clipUrl}/embed')}</script>
+<meta http-equiv="refresh" content="0;url=${clipUrl}/embed">
 </head></html>`);
 });
 
 app.get('/c/:token/embed', (req, res) => {
   const ua = req.get('user-agent') || '';
-  if (!CRAWLER_RE.test(ua)) {
-    const indexPath = path.join(__dirname, '..', '..', 'web', 'dist', 'index.html');
-    if (require('fs').existsSync(indexPath)) return res.sendFile(indexPath);
+  if (CRAWLER_RE.test(ua)) {
+    return res.redirect(301, '/c/' + req.params.token);
   }
-  res.redirect(301, '/c/' + req.params.token);
+  const indexPath = path.join(__dirname, '..', '..', 'web', 'dist', 'index.html');
+  if (require('fs').existsSync(indexPath)) return res.sendFile(indexPath);
+  res.status(404).json({ error: 'Not found' });
 });
 
 // Health check

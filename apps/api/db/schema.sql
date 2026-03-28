@@ -61,6 +61,12 @@ CREATE TABLE IF NOT EXISTS clips (
   sessionId TEXT
 );
 
+-- Session usage tracking (cumulative, persists across file expiration)
+CREATE TABLE IF NOT EXISTS session_usage (
+  sessionId TEXT PRIMARY KEY,
+  totalBytes INTEGER NOT NULL DEFAULT 0
+);
+
 -- Index for faster polling
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, createdAt);
 CREATE INDEX IF NOT EXISTS idx_jobs_expires ON jobs(expiresAt, status);

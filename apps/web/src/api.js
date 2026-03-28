@@ -109,7 +109,7 @@ export const api = {
   },
 
   // Storage
-  getStorage: () => fetchApi('/storage'),
+  getStorage: (sessionId) => fetchApi(`/storage?sessionId=${encodeURIComponent(sessionId || '')}`),
 
   // Utils
   getPreviewUrl: (url) => fetchApi(`/utils/preview?url=${encodeURIComponent(url)}`),

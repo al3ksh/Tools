@@ -296,6 +296,10 @@ async function finishClip(outputPath, token, ext, filename, sessionId, duration,
       sessionId || null
     );
 
+    if (sessionId && !req.isAdmin) {
+      try { statements.addSessionUsage.run(sessionId, stat.size, stat.size); } catch (e) {}
+    }
+
     const protocol = req.protocol;
     const host = req.get('host');
     const url = `${protocol}://${host}/c/${token}`;
