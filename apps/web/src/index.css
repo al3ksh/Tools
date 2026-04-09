@@ -1480,3 +1480,16 @@ textarea:focus-visible {
     box-shadow: none;
   }
 }
+
+.qr-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .qr-grid {
+    grid-template-columns: 1fr;
+  }
+}

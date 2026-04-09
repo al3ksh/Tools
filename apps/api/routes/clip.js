@@ -178,11 +178,13 @@ router.post('/finalize', (req, res) => {
 
           if (signal === 'SIGKILL') {
             responded = true;
+            try { fs.unlinkSync(outputPath); } catch (e) {}
             return res.status(504).json({ error: 'Video trimming timed out' });
           }
 
           if (code !== 0 || !fs.existsSync(outputPath)) {
             responded = true;
+            try { fs.unlinkSync(outputPath); } catch (e) {}
             return res.status(500).json({ error: 'Video trimming failed' });
           }
 
@@ -306,6 +308,7 @@ async function finishClip(outputPath, token, ext, filename, sessionId, duration,
 
     res.json({ token, url, filename, size: stat.size, meta });
   } catch (err) {
+    try { fs.unlinkSync(outputPath); } catch (e) {}
     res.status(500).json({ error: 'Failed to finalize clip' });
   }
 }

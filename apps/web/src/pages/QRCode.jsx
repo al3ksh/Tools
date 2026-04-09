@@ -1,118 +1,87 @@
-import { useState, useRef } from 'react';
-import { QrCode as QrCodeIcon, Download, Upload, Copy, ExternalLink, Settings, CheckCircle, XCircle } from 'lucide-react';
-import { api, downloadBlob } from '../api';
-import jsQR from 'jsqr';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { QrCode as QrCodeIcon, Download, Copy } from 'lucide-react';
+import { api } from '../api';
 import useToast from '../hooks/useToast';
+import ColorPicker from '../components/ColorPicker';
+
+const EC_LEVELS = [
+  { value: 'L', pct: '7%' },
+  { value: 'M', pct: '15%' },
+  { value: 'Q', pct: '25%' },
+  { value: 'H', pct: '30%' },
+];
+
+const SIZE_OPTIONS = [200, 400, 600, 800];
+
+const PRESETS = [
+  { fg: '#000000', bg: '#ffffff' },
+  { fg: '#ffffff', bg: '#000000' },
+  { fg: '#1a5fb4', bg: '#ffffff' },
+  { fg: '#ffffff', bg: '#1a5fb4' },
+  { fg: '#c0392b', bg: '#fef9e7' },
+  { fg: '#1e272e', bg: '#f5f6fa' },
+];
 
 export default function QRCode() {
-  const [activeTab, setActiveTab] = useState('generate');
-
-  // Generate state
   const [text, setText] = useState('');
   const [size, setSize] = useState(400);
-  const [darkColor, setDarkColor] = useState('#000000');
-  const [lightColor, setLightColor] = useState('#ffffff');
-  const [errorCorrection, setErrorCorrection] = useState('M');
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [fgColor, setFgColor] = useState('#000000');
+  const [bgColor, setBgColor] = useState('#ffffff');
+  const [ec, setEc] = useState('M');
   const [qrDataUrl, setQrDataUrl] = useState(null);
   const [qrSvg, setQrSvg] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
-
-  // Read state
-  const [decodedText, setDecodedText] = useState(null);
-  const [readError, setReadError] = useState('');
-  const [dragActive, setDragActive] = useState(false);
-  const [previewSrc, setPreviewSrc] = useState(null);
-  const fileInputRef = useRef(null);
-
   const [toast, showToast] = useToast();
 
-  const handleGenerate = async () => {
-    if (!text.trim()) return;
+  const abortRef = useRef(null);
+
+  const generate = useCallback(async (t, opts, signal) => {
+    if (!t.trim()) { setQrDataUrl(null); setQrSvg(null); return; }
     setGenerating(true);
     setError('');
-    setQrDataUrl(null);
-    setQrSvg(null);
-
     try {
-      const opts = { size, darkColor, lightColor, errorCorrection };
-      const [pngResult, svgResult] = await Promise.all([
-        api.generateQR(text, opts),
-        api.generateQRSvg(text, opts),
+      const [png, svg] = await Promise.all([
+        api.generateQR(t, opts, signal),
+        api.generateQRSvg(t, opts, signal),
       ]);
-      setQrDataUrl(pngResult.dataUrl);
-      setQrSvg(svgResult.svg);
+      setQrDataUrl(png.dataUrl);
+      setQrSvg(svg.svg);
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setGenerating(false);
-    }
+      if (err.name !== 'AbortError') setError(err.message);
+    } finally { setGenerating(false); }
+  }, []);
+
+  useEffect(() => {
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const t = setTimeout(() => {
+      generate(text, { size, darkColor: fgColor, lightColor: bgColor, errorCorrection: ec }, controller.signal);
+    }, 300);
+    return () => { clearTimeout(t); controller.abort(); };
+  }, [text, size, fgColor, bgColor, ec, generate]);
+
+  const dl = (data, name, mime) => {
+    const url = URL.createObjectURL(new Blob([data], { type: mime }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
-  const handleDownloadPng = () => {
+  const dlPng = () => {
     if (!qrDataUrl) return;
-    const [header, data] = qrDataUrl.split(',');
-    const mime = header.match(/:(.*?);/)[1];
+    const [, data] = qrDataUrl.split(',');
     const binary = atob(data);
-    const array = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
-    const blob = new Blob([array], { type: mime });
-    downloadBlob(blob, 'qrcode.png');
+    const arr = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+    dl(arr, 'qrcode.png', 'image/png');
   };
 
-  const handleDownloadSvg = () => {
-    if (!qrSvg) return;
-    const blob = new Blob([qrSvg], { type: 'image/svg+xml' });
-    downloadBlob(blob, 'qrcode.svg');
-  };
+  const dlSvg = () => { if (qrSvg) dl(qrSvg, 'qrcode.svg', 'image/svg+xml'); };
 
-  const handleReadFile = (file) => {
-    if (!file || !file.type.startsWith('image/')) {
-      setReadError('Please upload an image file');
-      return;
-    }
-    setDecodedText(null);
-    setReadError('');
-    setPreviewSrc(null);
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setPreviewSrc(e.target.result);
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height);
-        if (code) {
-          setDecodedText(code.data);
-        } else {
-          setReadError('No QR code found in the image. Try a clearer image.');
-        }
-      };
-      img.onerror = () => setReadError('Failed to load image');
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragActive(false);
-    const file = e.dataTransfer?.files?.[0];
-    if (file) handleReadFile(file);
-  };
-
-  const tabStyle = (isActive) => ({
-    flex: 1, padding: '10px 20px', border: 'none', cursor: 'pointer',
-    background: isActive ? 'var(--accent)' : 'var(--bg-card)',
-    color: isActive ? '#fff' : 'var(--text)',
-    fontWeight: 500, fontSize: '14px', transition: 'all 0.2s',
-  });
+  const sectionLabel = { fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' };
 
   return (
     <>
@@ -121,244 +90,139 @@ export default function QRCode() {
           <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <QrCodeIcon size={24} /> QR Code
           </h2>
-          <div className="subtitle">Generate and read QR codes</div>
+          <div className="subtitle">Generate custom QR codes</div>
         </div>
       </div>
 
       <div className="content">
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 0, marginBottom: '20px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)' }}>
-          <button style={tabStyle(activeTab === 'generate')} onClick={() => setActiveTab('generate')}>
-            Generate
-          </button>
-          <button style={tabStyle(activeTab === 'read')} onClick={() => setActiveTab('read')}>
-            Read / Scan
-          </button>
-        </div>
-
-        {/* GENERATE TAB */}
-        {activeTab === 'generate' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px', alignItems: 'start' }}>
-            {/* Form */}
-            <div className="card" style={{ margin: 0 }}>
-              <div className="card-header">
-                <div className="card-title"><QrCodeIcon size={18} /> Generate QR Code</div>
-              </div>
-              <div className="card-body">
-                <div className="form-group">
-                  <label className="form-label">Text or URL</label>
-                  <textarea
-                    className="form-input"
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    placeholder="https://example.com or any text..."
-                    rows={3}
-                    style={{ resize: 'vertical', fontFamily: 'inherit' }}
-                    maxLength={4296}
-                  />
-                  <div className="form-help">{text.length}/4296 characters</div>
-                </div>
-
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                >
-                  <Settings size={14} /> Customize {showAdvanced ? '▲' : '▼'}
-                </button>
-
-                {showAdvanced && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px', padding: '12px', background: 'var(--bg)', borderRadius: '8px' }}>
-                    <div className="form-group" style={{ margin: 0 }}>
-                      <label className="form-label">Size (px)</label>
-                      <select className="form-input" value={size} onChange={(e) => setSize(parseInt(e.target.value))}>
-                        <option value={200}>200 × 200</option>
-                        <option value={400}>400 × 400</option>
-                        <option value={600}>600 × 600</option>
-                        <option value={800}>800 × 800</option>
-                        <option value={1000}>1000 × 1000</option>
-                      </select>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                      <div className="form-group" style={{ margin: 0 }}>
-                        <label className="form-label">Foreground</label>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <input type="color" value={darkColor} onChange={(e) => setDarkColor(e.target.value)}
-                            style={{ width: '36px', height: '36px', border: 'none', borderRadius: '6px', cursor: 'pointer', padding: 0 }} />
-                          <input type="text" className="form-input" value={darkColor} onChange={(e) => setDarkColor(e.target.value)}
-                            style={{ flex: 1, fontFamily: 'monospace', fontSize: '13px' }} />
-                        </div>
-                      </div>
-                      <div className="form-group" style={{ margin: 0 }}>
-                        <label className="form-label">Background</label>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <input type="color" value={lightColor} onChange={(e) => setLightColor(e.target.value)}
-                            style={{ width: '36px', height: '36px', border: 'none', borderRadius: '6px', cursor: 'pointer', padding: 0 }} />
-                          <input type="text" className="form-input" value={lightColor} onChange={(e) => setLightColor(e.target.value)}
-                            style={{ flex: 1, fontFamily: 'monospace', fontSize: '13px' }} />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="form-group" style={{ margin: 0 }}>
-                      <label className="form-label">Error Correction</label>
-                      <select className="form-input" value={errorCorrection} onChange={(e) => setErrorCorrection(e.target.value)}>
-                        <option value="L">Low (7%) — smallest size</option>
-                        <option value="M">Medium (15%) — default</option>
-                        <option value="Q">Quartile (25%)</option>
-                        <option value="H">High (30%) — most durable</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-
+        <div className="qr-grid">
+          {/* Left — one compact card */}
+          <div className="card" style={{ margin: 0 }}>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Text input */}
+              <div>
+                <textarea
+                  className="form-input"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Text or URL..."
+                  rows={2}
+                  style={{ resize: 'vertical', fontFamily: 'inherit' }}
+                  maxLength={4296}
+                />
                 {error && (
-                  <div style={{ color: 'var(--error)', marginBottom: '12px', padding: '10px', background: 'rgba(231, 76, 60, 0.1)', borderRadius: '6px', fontSize: '13px' }}>
-                    {error}
-                  </div>
-                )}
-
-                <button className="btn btn-primary" onClick={handleGenerate} disabled={generating || !text.trim()}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {generating ? 'Generating...' : <><QrCodeIcon size={16} /> Generate</>}
-                </button>
-              </div>
-            </div>
-
-            {/* Preview */}
-            <div className="card" style={{ margin: 0 }}>
-              <div className="card-header">
-                <div className="card-title"><Download size={18} /> Preview & Download</div>
-              </div>
-              <div className="card-body" style={{ textAlign: 'center' }}>
-                {qrDataUrl ? (
-                  <>
-                    <div style={{ padding: '16px', background: lightColor, borderRadius: '8px', display: 'inline-block' }}>
-                      <img src={qrDataUrl} alt="QR Code" style={{ maxWidth: '100%', maxHeight: '360px', display: 'block' }} />
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '16px', flexWrap: 'wrap' }}>
-                      <button className="btn btn-primary" onClick={handleDownloadPng} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Download size={16} /> PNG
-                      </button>
-                      <button className="btn btn-secondary" onClick={handleDownloadSvg} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Download size={16} /> SVG
-                      </button>
-                      <button className="btn btn-secondary" onClick={() => {
-                        navigator.clipboard.writeText(text);
-                        showToast('Text copied!');
-                      }} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Copy size={16} /> Copy Text
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ padding: '60px 20px', color: 'var(--text-secondary)' }}>
-                    <QrCodeIcon size={64} strokeWidth={1} style={{ opacity: 0.2, marginBottom: '12px' }} />
-                    <div style={{ fontSize: '14px', opacity: 0.6 }}>Your QR code will appear here</div>
-                  </div>
+                  <div style={{ color: 'var(--error)', marginTop: '6px', padding: '6px 8px', background: 'rgba(231,76,60,0.1)', borderRadius: '4px', fontSize: '12px' }}>{error}</div>
                 )}
               </div>
-            </div>
-          </div>
-        )}
 
-        {/* READ / SCAN TAB */}
-        {activeTab === 'read' && (
-          <div style={{ maxWidth: '600px' }}>
-            <div className="card" style={{ margin: 0 }}>
-              <div className="card-header">
-                <div className="card-title"><Upload size={18} /> Upload QR Code Image</div>
+              {/* Colors */}
+              <div>
+                <div style={sectionLabel}>Colors</div>
+                <ColorPicker
+                  fgColor={fgColor} bgColor={bgColor}
+                  onFgChange={setFgColor} onBgChange={setBgColor}
+                  onSwap={() => { const t = fgColor; setFgColor(bgColor); setBgColor(t); }}
+                />
+                <div style={{ display: 'flex', gap: '5px', marginTop: '8px' }}>
+                  {PRESETS.map((p, i) => (
+                    <button key={i} onClick={() => { setFgColor(p.fg); setBgColor(p.bg); }}
+                      style={{
+                        width: '24px', height: '24px', borderRadius: '4px', cursor: 'pointer',
+                        border: '1.5px solid var(--border)', padding: 0,
+                        background: `linear-gradient(135deg, ${p.fg} 50%, ${p.bg} 50%)`,
+                        transition: 'transform 0.15s',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.2)'}
+                      onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                    />
+                  ))}
+                </div>
               </div>
-              <div className="card-body">
-                <div
-                  onDrop={handleDrop}
-                  onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-                  onDragLeave={() => setDragActive(false)}
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    border: `2px dashed ${dragActive ? 'var(--accent)' : 'var(--border)'}`,
-                    borderRadius: '12px', padding: '40px 20px', textAlign: 'center',
-                    cursor: 'pointer', transition: 'all 0.2s',
-                    background: dragActive ? 'rgba(59, 130, 246, 0.05)' : 'transparent',
-                  }}
-                >
-                  <Upload size={48} style={{ opacity: 0.25, marginBottom: '12px' }} />
-                  <div style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-                    Drop an image with a QR code here, or click to upload
+
+              {/* EC + Size inline */}
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={sectionLabel}>Error Correction</div>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {EC_LEVELS.map((l) => (
+                      <button key={l.value} onClick={() => setEc(l.value)}
+                        style={{
+                          flex: 1, padding: '5px 2px', borderRadius: '5px', border: '1px solid',
+                          borderColor: ec === l.value ? 'var(--accent)' : 'var(--border)',
+                          background: ec === l.value ? 'var(--accent)' : 'var(--bg)',
+                          color: ec === l.value ? 'var(--accent-btn-text)' : 'var(--text-secondary)',
+                          fontSize: '11px', fontWeight: ec === l.value ? 600 : 400,
+                          cursor: 'pointer', transition: 'all 0.15s', textAlign: 'center',
+                        }}>
+                        <div style={{ fontWeight: 600 }}>{l.value}</div>
+                        <div style={{ fontSize: '9px', opacity: 0.7 }}>{l.pct}</div>
+                      </button>
+                    ))}
                   </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    style={{ display: 'none' }}
-                    onChange={(e) => { if (e.target.files[0]) handleReadFile(e.target.files[0]); e.target.value = ''; }}
-                  />
                 </div>
 
-                {previewSrc && (
-                  <div style={{ marginTop: '16px', textAlign: 'center' }}>
-                    <img src={previewSrc} alt="Uploaded" style={{
-                      maxWidth: '100%', maxHeight: '200px', borderRadius: '8px',
-                      border: '1px solid var(--border)'
-                    }} />
+                <div style={{ flex: 1 }}>
+                  <div style={sectionLabel}>Size</div>
+                  <div style={{ position: 'relative' }}>
+                    <select
+                      className="form-input"
+                      value={size}
+                      onChange={(e) => setSize(parseInt(e.target.value))}
+                      style={{ padding: '5px 28px 5px 10px', fontSize: '13px', appearance: 'none', cursor: 'pointer' }}
+                    >
+                      {SIZE_OPTIONS.map((s) => <option key={s} value={s}>{s} × {s}</option>)}
+                    </select>
+                    <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text-secondary)', fontSize: '10px' }}>▾</div>
                   </div>
-                )}
-
-                {readError && (
-                  <div style={{
-                    marginTop: '16px', padding: '12px', borderRadius: '8px',
-                    background: 'rgba(231, 76, 60, 0.1)', color: 'var(--error)',
-                    display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px'
-                  }}>
-                    <XCircle size={16} /> {readError}
-                  </div>
-                )}
-
-                {decodedText && (
-                  <div style={{ marginTop: '16px' }}>
-                    <div style={{
-                      padding: '12px', background: 'rgba(46, 204, 113, 0.1)', borderRadius: '8px',
-                      border: '1px solid rgba(46, 204, 113, 0.3)', marginBottom: '12px',
-                      display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--success, #2ecc71)'
-                    }}>
-                      <CheckCircle size={16} /> QR code decoded successfully
-                    </div>
-                    <div style={{
-                      padding: '12px', background: 'var(--bg)', borderRadius: '6px',
-                      wordBreak: 'break-all', fontFamily: 'monospace', fontSize: '14px',
-                      border: '1px solid var(--border)', color: 'var(--text)'
-                    }}>
-                      {decodedText}
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-                      <button className="btn btn-primary btn-sm" onClick={() => {
-                        navigator.clipboard.writeText(decodedText);
-                        showToast('Copied to clipboard!');
-                      }} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Copy size={14} /> Copy
-                      </button>
-                      {(decodedText.startsWith('http://') || decodedText.startsWith('https://')) && (
-                        <a href={decodedText} target="_blank" rel="noopener noreferrer"
-                          className="btn btn-secondary btn-sm"
-                          style={{ display: 'flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}>
-                          <ExternalLink size={14} /> Open Link
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                )}
+                </div>
               </div>
             </div>
           </div>
-        )}
+
+          {/* Right — Preview */}
+          <div className="card" style={{ margin: 0 }}>
+            <div className="card-header">
+              <div className="card-title">Preview</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{size}×{size}px</div>
+            </div>
+            <div className="card-body" style={{ textAlign: 'center' }}>
+              {qrDataUrl ? (
+                <>
+                  <div style={{ padding: '20px', background: bgColor, borderRadius: '10px', display: 'inline-block', border: '1px solid var(--border)' }}>
+                    <img src={qrDataUrl} alt="QR" style={{ width: '280px', height: '280px', display: 'block', borderRadius: '4px' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', marginTop: '16px' }}>
+                    <button className="btn btn-primary" onClick={dlPng} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 14px', fontSize: '13px' }}>
+                      <Download size={14} /> PNG
+                    </button>
+                    <button className="btn btn-secondary" onClick={dlSvg} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 14px', fontSize: '13px' }}>
+                      <Download size={14} /> SVG
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => { navigator.clipboard.writeText(text); showToast('Copied!'); }} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 14px', fontSize: '13px' }}>
+                      <Copy size={14} /> Copy
+                    </button>
+                  </div>
+                </>
+              ) : text.trim() && generating ? (
+                <div style={{ padding: '80px 20px' }}>
+                  <QrCodeIcon size={56} strokeWidth={1} style={{ opacity: 0.15, marginBottom: '10px', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                  <div style={{ fontSize: '13px', color: 'var(--text-secondary)', opacity: 0.6 }}>Generating...</div>
+                </div>
+              ) : (
+                <div style={{ padding: '80px 20px' }}>
+                  <QrCodeIcon size={56} strokeWidth={1} style={{ opacity: 0.15, marginBottom: '10px' }} />
+                  <div style={{ fontSize: '13px', color: 'var(--text-secondary)', opacity: 0.6 }}>Start typing to generate</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {toast && (
         <div style={{
           position: 'fixed', bottom: '20px', right: '20px', zIndex: 9999,
-          padding: '12px 20px', borderRadius: '8px', fontWeight: 500, fontSize: '14px',
+          padding: '10px 18px', borderRadius: '8px', fontWeight: 500, fontSize: '13px',
           background: toast.type === 'error' ? 'var(--error)' : 'var(--accent)',
           color: '#fff', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
         }}>

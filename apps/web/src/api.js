@@ -115,13 +115,15 @@ export const api = {
   getPreviewUrl: (url) => fetchApi(`/utils/preview?url=${encodeURIComponent(url)}`),
 
   // QR Code
-  generateQR: (text, options = {}) => fetchApi('/qr/generate', {
+  generateQR: (text, options = {}, signal) => fetchApi('/qr/generate', {
     method: 'POST',
     body: JSON.stringify({ text, ...options }),
+    signal,
   }),
-  generateQRSvg: (text, options = {}) => fetchApi('/qr/generate-svg', {
+  generateQRSvg: (text, options = {}, signal) => fetchApi('/qr/generate-svg', {
     method: 'POST',
     body: JSON.stringify({ text, ...options }),
+    signal,
   }),
 
   // GIF
