@@ -62,21 +62,32 @@ export const api = {
   getShortlinks: (sessionId) => fetchApi(`/shortlinks/list${sessionId ? `?sessionId=${sessionId}` : ''}`),
 
   // Drop
-  uploadDrop: async (file, sessionId, password) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    if (sessionId) formData.append('sessionId', sessionId);
-    if (password) formData.append('password', password);
-    const response = await fetch(`${API_BASE}/drop/upload`, {
-      method: 'POST',
-      credentials: 'include',
-      body: formData,
+  uploadDrop: (file, sessionId, password, onProgress) => {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      if (sessionId) formData.append('sessionId', sessionId);
+      if (password) formData.append('password', password);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/drop/upload`);
+      xhr.withCredentials = true;
+      if (onProgress) {
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+        });
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText)); }
+          catch (e) { reject(new Error('Upload failed')); }
+        } else {
+          try { reject(new Error(JSON.parse(xhr.responseText).error || 'Upload failed')); }
+          catch (e) { reject(new Error('Upload failed')); }
+        }
+      };
+      xhr.onerror = () => reject(new Error('Network error'));
+      xhr.send(formData);
     });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-      throw new Error(error.error || 'Upload failed');
-    }
-    return response.json();
   },
 
   getDrops: (sessionId) => fetchApi(`/drop/list${sessionId ? `?sessionId=${sessionId}` : ''}`),

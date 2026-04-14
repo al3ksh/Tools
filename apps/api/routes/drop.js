@@ -67,7 +67,7 @@ router.post('/upload', dropSizeLimit, (req, res, next) => {
     const token = path.basename(req.file.filename, path.extname(req.file.filename));
     const createdAt = new Date().toISOString();
     const relativePath = path.relative(DATA_DIR, req.file.path);
-    const sessionId = req.body.sessionId || null;
+    const sessionId = req.isAdmin ? 'admin' : (req.body.sessionId || null);
 
     let expiresAt = null;
     if (!req.isAdmin) {

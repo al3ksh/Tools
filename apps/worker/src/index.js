@@ -17,7 +17,7 @@ function safePath(baseDir, relativePath) {
   return resolved;
 }
 
-['downloads', 'converted', 'uploads'].forEach(dir => {
+['downloads', 'converted', 'uploads', 'drops', 'clips-temp'].forEach(dir => {
   const dirPath = path.join(DATA_DIR, dir);
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
@@ -504,6 +504,59 @@ async function cleanupExpiredJobs() {
 
     if (staleJobs.length > 0) {
       console.log(`Cleaned up ${staleJobs.length} stale failed jobs`);
+    }
+
+    const ORPHAN_THRESHOLD = 5 * 60 * 1000;
+
+    const knownDropPaths = new Set(
+      db.prepare(`SELECT path FROM drops WHERE deleted = 0`).all().map(r => r.path)
+    );
+    const dropsDir = path.join(DATA_DIR, 'drops');
+    if (fs.existsSync(dropsDir)) {
+      for (const entry of fs.readdirSync(dropsDir)) {
+        const entryPath = path.join(dropsDir, entry);
+        try {
+          const stat = fs.statSync(entryPath);
+          if (stat.isFile() && stat.mtimeMs < Date.now() - ORPHAN_THRESHOLD) {
+            const relativePath = path.relative(DATA_DIR, entryPath);
+            if (!knownDropPaths.has(relativePath)) {
+              fs.unlinkSync(entryPath);
+              console.log(`Removed orphaned drop file: ${entry}`);
+            }
+          }
+        } catch (e) {}
+      }
+    }
+
+    const uploadsDir = path.join(DATA_DIR, 'uploads');
+    if (fs.existsSync(uploadsDir)) {
+      const knownJobIds = new Set(
+        db.prepare(`SELECT id FROM jobs WHERE deleted = 0`).all().map(r => r.id)
+      );
+      for (const dateDir of fs.readdirSync(uploadsDir)) {
+        const dateDirPath = path.join(uploadsDir, dateDir);
+        if (!fs.statSync(dateDirPath).isDirectory()) continue;
+        try {
+          const dirStat = fs.statSync(dateDirPath);
+          if (dirStat.mtimeMs < Date.now() - ORPHAN_THRESHOLD && fs.readdirSync(dateDirPath).length === 0) {
+            fs.rmSync(dateDirPath, { recursive: true, force: true });
+            continue;
+          }
+        } catch (e) { continue; }
+        for (const entry of fs.readdirSync(dateDirPath)) {
+          const entryPath = path.join(dateDirPath, entry);
+          try {
+            const stat = fs.statSync(entryPath);
+            if (stat.isFile() && stat.mtimeMs < Date.now() - ORPHAN_THRESHOLD) {
+              const referenced = knownJobIds.has(entry.split('-')[0]);
+              if (!referenced) {
+                fs.unlinkSync(entryPath);
+                console.log(`Removed orphaned upload file: ${dateDir}/${entry}`);
+              }
+            }
+          } catch (e) {}
+        }
+      }
     }
 
     const tempDirs = [

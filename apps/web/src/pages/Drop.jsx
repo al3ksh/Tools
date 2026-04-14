@@ -10,6 +10,7 @@ function Drop({ sessionId, isAdmin }) {
   const [file, setFile] = useState(null);
   const [drops, setDrops] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState(null);
   const [createdDrop, setCreatedDrop] = useState(null);
   const [toast, showToast] = useToast();
@@ -47,11 +48,12 @@ function Drop({ sessionId, isAdmin }) {
     if (!file) return;
 
     setUploading(true);
+    setUploadProgress(0);
     setError('');
     setCreatedDrop(null);
 
     try {
-      const result = await api.uploadDrop(file, sessionId, uploadPassword.trim());
+      const result = await api.uploadDrop(file, sessionId, uploadPassword.trim(), (pct) => setUploadProgress(pct));
       setCreatedDrop(result);
       setFile(null);
       setUploadPassword('');
@@ -71,18 +73,7 @@ function Drop({ sessionId, isAdmin }) {
       setDownloadError('');
       return;
     }
-    try {
-      const { blob, filename } = await api.downloadDrop(drop.token);
-      downloadBlob(blob, filename);
-    } catch (err) {
-      if (err.message === 'Password required' || err.message === 'PASSWORD_REQUIRED') {
-        setPasswordModal(drop);
-        setDownloadPassword('');
-        setDownloadError('');
-      } else {
-        showToast(err.message, 'error');
-      }
-    }
+    window.location.href = getDropUrl(drop.token);
   };
 
   const handlePasswordDownload = async () => {
@@ -212,8 +203,23 @@ function Drop({ sessionId, isAdmin }) {
                 </div>
               )}
 
+              {uploading && (
+                <div style={{ marginBottom: '15px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '12px' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Uploading...</span>
+                    <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{uploadProgress}%</span>
+                  </div>
+                  <div style={{ width: '100%', height: '6px', background: 'var(--bg-tertiary, var(--bg))', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', borderRadius: '3px', transition: 'width 0.2s ease',
+                      background: 'var(--accent)', width: `${uploadProgress}%`,
+                    }} />
+                  </div>
+                </div>
+              )}
+
               <button type="submit" className="btn btn-primary" disabled={uploading || !file}>
-                {uploading ? <><Clock size={16} /> Uploading...</> : <><Upload size={16} /> Upload File</>}
+                {uploading ? <><Clock size={16} /> Uploading... {uploadProgress}%</> : <><Upload size={16} /> Upload File</>}
               </button>
             </form>
           </div>

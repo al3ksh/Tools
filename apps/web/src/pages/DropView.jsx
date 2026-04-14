@@ -56,13 +56,18 @@ function DropView() {
             } finally {
                 setDownloading(false);
             }
-        } else {
+        } else if (info.hasPassword) {
+            setDownloading(true);
             try {
-                const { blob, filename } = await api.downloadDrop(token);
+                const { blob, filename } = await api.downloadDrop(token, password);
                 downloadBlob(blob, filename);
             } catch (err) {
                 showToast(err.message, 'error');
+            } finally {
+                setDownloading(false);
             }
+        } else {
+            window.location.href = getDropUrl(info.token);
         }
     };
 
