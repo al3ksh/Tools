@@ -582,24 +582,6 @@ async function cleanupExpiredJobs() {
       }
     }
 
-    const uploadsDir = path.join(DATA_DIR, 'uploads');
-    if (fs.existsSync(uploadsDir)) {
-      const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-      for (const dateDir of fs.readdirSync(uploadsDir)) {
-        if (dateDir === 'gif-temp' || dateDir === 'pdf-temp') continue;
-        const fullDir = path.join(uploadsDir, dateDir);
-        if (!fs.statSync(fullDir).isDirectory()) continue;
-        try {
-          for (const file of fs.readdirSync(fullDir)) {
-            const filePath = path.join(fullDir, file);
-            const stat = fs.statSync(filePath);
-            if (stat.mtimeMs < oneDayAgo) {
-              fs.unlinkSync(filePath);
-            }
-          }
-        } catch (e) { }
-      }
-    }
   } catch (err) {
     console.error('Cleanup error:', err);
   }
