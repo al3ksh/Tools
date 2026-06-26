@@ -4,6 +4,7 @@ import { api, formatBytes, downloadBlob } from '../api';
 import * as pdfjsLib from 'pdfjs-dist';
 import FileUploader from '../components/FileUploader';
 import useToast from '../hooks/useToast';
+import JobProgress from '../components/JobProgress';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
 
@@ -154,7 +155,7 @@ const MODES = [
   { id: 'images', label: 'Images → PDF', icon: Image, desc: 'Convert images to PDF' },
 ];
 
-export default function PDFEditor({ isAdmin }) {
+export default function PDFEditor({ sessionId, isAdmin }) {
   const [mode, setMode] = useState('edit');
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfDoc, setPdfDoc] = useState(null);
@@ -173,6 +174,8 @@ export default function PDFEditor({ isAdmin }) {
   const [splitInput, setSplitInput] = useState('');
   const [imageFiles, setImageFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
+  const [currentJob, setCurrentJob] = useState(null);
+  const [jobTitle, setJobTitle] = useState('');
   const [error, setError] = useState('');
   const [toast, showToast] = useToast();
   const [dragActive, setDragActive] = useState(false);
@@ -259,6 +262,8 @@ export default function PDFEditor({ isAdmin }) {
   const handleEditorSave = async () => {
     if (!pdfFile || activePages.length === 0) return;
     setProcessing(true);
+    setCurrentJob(null);
+    setJobTitle('Saving edited PDF');
     setError('');
     try {
       const hasRotations = activePages.some(p => (rotations[p] || 0) !== 0);
@@ -272,13 +277,13 @@ export default function PDFEditor({ isAdmin }) {
         const rots = {};
         activePages.forEach(p => { if (rotations[p]) rots[p] = rotations[p]; });
         if (Object.keys(rots).length > 0) {
-          const blob = await api.pdfRotate(currentFile, rots);
+          const blob = await api.pdfRotate(currentFile, rots, sessionId, { onJobUpdate: setCurrentJob });
           currentFile = new File([blob], pdfFile.name, { type: 'application/pdf' });
         }
       }
 
       if (hasReorder || hasDeleted) {
-        const blob = await api.pdfReorder(currentFile, activePages);
+        const blob = await api.pdfReorder(currentFile, activePages, sessionId, { onJobUpdate: setCurrentJob });
         currentFile = new File([blob], pdfFile.name, { type: 'application/pdf' });
       }
 
@@ -288,6 +293,7 @@ export default function PDFEditor({ isAdmin }) {
       setError(err.message);
     } finally {
       setProcessing(false);
+      setCurrentJob(null);
     }
   };
 
@@ -385,33 +391,37 @@ export default function PDFEditor({ isAdmin }) {
   const resetAll = () => {
     setPdfFile(null); setPdfDoc(null); setPageCount(0); setPageOrder([]); setRotations({});
     setDeletedPages(new Set()); setSelectedPages(new Set()); setMergeFiles([]); setMergeInfos([]);
-    setSplitFile(null); setSplitPageCount(0); setSplitInput(''); setImageFiles([]); setError('');
+    setSplitFile(null); setSplitPageCount(0); setSplitInput(''); setImageFiles([]); setError(''); setCurrentJob(null);
   };
 
   const handleProcess = async () => {
     setProcessing(true);
+    setCurrentJob(null);
     setError('');
     try {
       let blob, filename;
       if (mode === 'merge') {
         if (mergeFiles.length < 2) throw new Error('Add at least 2 PDFs');
-        blob = await api.pdfMerge(mergeFiles);
+        setJobTitle('Merging PDF');
+        blob = await api.pdfMerge(mergeFiles, sessionId, { onJobUpdate: setCurrentJob });
         filename = 'merged.pdf';
       } else if (mode === 'split') {
         if (!splitFile) throw new Error('Upload a PDF first');
         const pages = parsePageRange(splitInput, splitPageCount);
         if (!pages.length) throw new Error('Enter valid page numbers');
-        blob = await api.pdfSplit(splitFile, pages);
+        setJobTitle('Extracting pages');
+        blob = await api.pdfSplit(splitFile, pages, sessionId, { onJobUpdate: setCurrentJob });
         filename = 'extracted.pdf';
       } else if (mode === 'images') {
         if (!imageFiles.length) throw new Error('Add at least one image');
-        blob = await api.pdfImagesToPdf(imageFiles);
+        setJobTitle('Creating PDF');
+        blob = await api.pdfImagesToPdf(imageFiles, sessionId, { onJobUpdate: setCurrentJob });
         filename = 'images.pdf';
       }
       downloadBlob(blob, filename);
       showToast('Done!');
     } catch (err) { setError(err.message); }
-    finally { setProcessing(false); }
+    finally { setProcessing(false); setCurrentJob(null); }
   };
 
   const fileAccept = mode === 'images' ? 'image/jpeg,image/png' : 'application/pdf';
@@ -551,6 +561,7 @@ export default function PDFEditor({ isAdmin }) {
                     {processing ? <><Clock size={16} /> Processing...</> : <><Download size={16} /> Save & Download PDF</>}
                   </button>
                 </div>
+                <JobProgress job={currentJob} title={jobTitle || 'Processing PDF'} fallbackMessage="Worker is processing PDF changes" />
               </>
             )}
           </>
@@ -594,10 +605,13 @@ export default function PDFEditor({ isAdmin }) {
               )}
               {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231,76,60,0.1)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
               {mergeFiles.length >= 2 && (
-                <button className="btn btn-primary" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                  onClick={handleProcess} disabled={processing}>
-                  {processing ? <><Clock size={16} /> Merging...</> : <><Download size={16} /> Merge & Download</>}
-                </button>
+                <>
+                  <button className="btn btn-primary" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                    onClick={handleProcess} disabled={processing}>
+                    {processing ? <><Clock size={16} /> Merging...</> : <><Download size={16} /> Merge & Download</>}
+                  </button>
+                  <JobProgress job={currentJob} title={jobTitle || 'Merging PDF'} fallbackMessage="Worker is merging files" />
+                </>
               )}
             </div>
           </div>
@@ -636,6 +650,7 @@ export default function PDFEditor({ isAdmin }) {
                     onClick={handleProcess} disabled={processing || !splitInput.trim()}>
                     {processing ? <><Clock size={16} /> Extracting...</> : <><Download size={16} /> Extract & Download</>}
                   </button>
+                  <JobProgress job={currentJob} title={jobTitle || 'Extracting pages'} fallbackMessage="Worker is creating the extracted PDF" />
                 </>
               )}
             </div>
@@ -674,10 +689,13 @@ export default function PDFEditor({ isAdmin }) {
               )}
               {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231,76,60,0.1)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
               {imageFiles.length > 0 && (
-                <button className="btn btn-primary" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                  onClick={handleProcess} disabled={processing}>
-                  {processing ? <><Clock size={16} /> Creating...</> : <><Download size={16} /> Create PDF</>}
-                </button>
+                <>
+                  <button className="btn btn-primary" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                    onClick={handleProcess} disabled={processing}>
+                    {processing ? <><Clock size={16} /> Creating...</> : <><Download size={16} /> Create PDF</>}
+                  </button>
+                  <JobProgress job={currentJob} title={jobTitle || 'Creating PDF'} fallbackMessage="Worker is building the PDF" />
+                </>
               )}
             </div>
           </div>

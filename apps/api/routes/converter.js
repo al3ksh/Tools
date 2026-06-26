@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { statements, DATA_DIR } = require('../db/database');
-const { clampNumber, checkJobLimit, createGuestSizeLimit } = require('./utils');
+const { clampNumber, checkJobLimit, createGuestSizeLimit, createDiskSpaceGuard } = require('./utils');
 
 // Configure multer for uploads
 const uploadsDir = path.join(DATA_DIR, 'uploads');
@@ -30,9 +30,10 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 * 1024 } });
 const uploadGuest = multer({ storage, limits: { fileSize: 500 * 1024 * 1024 } });
+const diskSpaceGuard = createDiskSpaceGuard({ dataDir: DATA_DIR, minFreeBytes: 512 * 1024 * 1024 });
 
 // POST /api/upload - upload a file
-router.post('/upload', createGuestSizeLimit(500), (req, res, next) => {
+router.post('/upload', diskSpaceGuard, createGuestSizeLimit(500), (req, res, next) => {
   const uploader = req.isAdmin ? upload : uploadGuest;
   uploader.single('file')(req, res, (err) => {
     if (err) {

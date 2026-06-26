@@ -18,10 +18,107 @@ async function fetchApi(endpoint, options = {}) {
   return response.json();
 }
 
+async function submitPdfJob(endpoint, formData, sessionId, fallbackError, options = {}) {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: fallbackError }));
+    throw new Error(error.error || fallbackError);
+  }
+
+  const { jobId } = await response.json();
+  if (!jobId) throw new Error(fallbackError);
+
+  const startedAt = Date.now();
+  if (options.onJobUpdate) {
+    options.onJobUpdate({ id: jobId, status: 'queued', progress: 0, type: 'pdf', logsTail: 'Job queued' });
+  }
+  while (Date.now() - startedAt < 10 * 60 * 1000) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    const job = await fetchApi(`/jobs/${jobId}${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`);
+    if (options.onJobUpdate) options.onJobUpdate(job);
+
+    if (job.status === 'done') {
+      const fileResponse = await fetch(getFileUrl(jobId, null, sessionId), { credentials: 'include' });
+      if (!fileResponse.ok) {
+        const error = await fileResponse.json().catch(() => ({ error: 'Download failed' }));
+        throw new Error(error.error || 'Download failed');
+      }
+      return fileResponse.blob();
+    }
+
+    if (job.status === 'failed') {
+      throw new Error(job.error || fallbackError);
+    }
+  }
+
+  throw new Error('PDF job timed out');
+}
+
+async function submitGeneratedFileJob(endpoint, formData, sessionId, fallbackError, timeoutMs = 10 * 60 * 1000, options = {}) {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: fallbackError }));
+    throw new Error(error.error || fallbackError);
+  }
+
+  const { jobId } = await response.json();
+  if (!jobId) throw new Error(fallbackError);
+
+  const startedAt = Date.now();
+  if (options.onJobUpdate) {
+    options.onJobUpdate({ id: jobId, status: 'queued', progress: 0, type: 'gif', logsTail: 'Job queued' });
+  }
+  while (Date.now() - startedAt < timeoutMs) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    const job = await fetchApi(`/jobs/${jobId}${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`);
+    if (options.onJobUpdate) options.onJobUpdate(job);
+
+    if (job.status === 'done') {
+      const fileResponse = await fetch(getFileUrl(jobId, null, sessionId), { credentials: 'include' });
+      if (!fileResponse.ok) {
+        const error = await fileResponse.json().catch(() => ({ error: 'Download failed' }));
+        throw new Error(error.error || 'Download failed');
+      }
+      return fileResponse.blob();
+    }
+
+    if (job.status === 'failed') {
+      throw new Error(job.error || fallbackError);
+    }
+  }
+
+  throw new Error(`${fallbackError} timed out`);
+}
+
+async function waitForJob(jobId, sessionId, fallbackError, timeoutMs = 10 * 60 * 1000, options = {}) {
+  const startedAt = Date.now();
+  if (options.onJobUpdate) {
+    options.onJobUpdate({ id: jobId, status: 'queued', progress: 0, logsTail: 'Job queued' });
+  }
+  while (Date.now() - startedAt < timeoutMs) {
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    const job = await fetchApi(`/jobs/${jobId}${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`);
+    if (options.onJobUpdate) options.onJobUpdate(job);
+    if (job.status === 'done') return job;
+    if (job.status === 'failed') throw new Error(job.error || fallbackError);
+  }
+  throw new Error(`${fallbackError} timed out`);
+}
+
 export const api = {
   // Jobs
   getJobs: (sessionId) => fetchApi(`/jobs${sessionId ? `?sessionId=${sessionId}` : ''}`),
-  getJob: (id) => fetchApi(`/jobs/${id}`),
+  getJob: (id, sessionId) => fetchApi(`/jobs/${id}${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`),
   deleteJob: (id, sessionId) => fetchApi(`/jobs/${id}${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`, { method: 'DELETE' }),
   cancelJob: (id, sessionId) => fetchApi(`/jobs/${id}/cancel${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`, { method: 'POST' }),
 
@@ -152,25 +249,17 @@ export const api = {
     }
     return response.json();
   },
-  gifProcess: async (file, options = {}) => {
+  gifProcess: async (file, options = {}, sessionId, callbacks = {}) => {
     const formData = new FormData();
     formData.append('file', file);
+    if (sessionId) formData.append('sessionId', sessionId);
     Object.entries(options).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
         formData.append(key, String(value));
       }
     });
 
-    const response = await fetch(`${API_BASE}/gif/process`, {
-      method: 'POST',
-      credentials: 'include',
-      body: formData,
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'GIF processing failed' }));
-      throw new Error(error.error || 'GIF processing failed');
-    }
-    return response.blob();
+    return submitGeneratedFileJob('/gif/process', formData, sessionId, 'GIF processing failed', 10 * 60 * 1000, callbacks);
   },
 
   // PDF
@@ -188,93 +277,45 @@ export const api = {
     }
     return response.json();
   },
-  pdfMerge: async (files) => {
+  pdfMerge: async (files, sessionId, callbacks = {}) => {
     const formData = new FormData();
     files.forEach(f => formData.append('files', f));
-    const response = await fetch(`${API_BASE}/pdf/merge`, {
-      method: 'POST',
-      credentials: 'include',
-      body: formData,
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Merge failed' }));
-      throw new Error(error.error || 'Merge failed');
-    }
-    return response.blob();
+    if (sessionId) formData.append('sessionId', sessionId);
+    return submitPdfJob('/pdf/merge', formData, sessionId, 'Merge failed', callbacks);
   },
-  pdfSplit: async (file, pages) => {
+  pdfSplit: async (file, pages, sessionId, callbacks = {}) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('pages', JSON.stringify(pages));
-    const response = await fetch(`${API_BASE}/pdf/split`, {
-      method: 'POST',
-      credentials: 'include',
-      body: formData,
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Split failed' }));
-      throw new Error(error.error || 'Split failed');
-    }
-    return response.blob();
+    if (sessionId) formData.append('sessionId', sessionId);
+    return submitPdfJob('/pdf/split', formData, sessionId, 'Split failed', callbacks);
   },
-  pdfRotate: async (file, rotations) => {
+  pdfRotate: async (file, rotations, sessionId, callbacks = {}) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('rotations', JSON.stringify(rotations));
-    const response = await fetch(`${API_BASE}/pdf/rotate`, {
-      method: 'POST',
-      credentials: 'include',
-      body: formData,
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Rotate failed' }));
-      throw new Error(error.error || 'Rotate failed');
-    }
-    return response.blob();
+    if (sessionId) formData.append('sessionId', sessionId);
+    return submitPdfJob('/pdf/rotate', formData, sessionId, 'Rotate failed', callbacks);
   },
-  pdfRemovePages: async (file, pages) => {
+  pdfRemovePages: async (file, pages, sessionId, callbacks = {}) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('pages', JSON.stringify(pages));
-    const response = await fetch(`${API_BASE}/pdf/remove-pages`, {
-      method: 'POST',
-      credentials: 'include',
-      body: formData,
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Remove pages failed' }));
-      throw new Error(error.error || 'Remove pages failed');
-    }
-    return response.blob();
+    if (sessionId) formData.append('sessionId', sessionId);
+    return submitPdfJob('/pdf/remove-pages', formData, sessionId, 'Remove pages failed', callbacks);
   },
-  pdfImagesToPdf: async (files) => {
+  pdfImagesToPdf: async (files, sessionId, callbacks = {}) => {
     const formData = new FormData();
     files.forEach(f => formData.append('images', f));
-    const response = await fetch(`${API_BASE}/pdf/images-to-pdf`, {
-      method: 'POST',
-      credentials: 'include',
-      body: formData,
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Conversion failed' }));
-      throw new Error(error.error || 'Conversion failed');
-    }
-    return response.blob();
+    if (sessionId) formData.append('sessionId', sessionId);
+    return submitPdfJob('/pdf/images-to-pdf', formData, sessionId, 'Conversion failed', callbacks);
   },
-  pdfReorder: async (file, order) => {
+  pdfReorder: async (file, order, sessionId, callbacks = {}) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('order', JSON.stringify(order));
-    const response = await fetch(`${API_BASE}/pdf/reorder`, {
-      method: 'POST',
-      credentials: 'include',
-      body: formData,
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Reorder failed' }));
-      throw new Error(error.error || 'Reorder failed');
-    }
-    return response.blob();
+    if (sessionId) formData.append('sessionId', sessionId);
+    return submitPdfJob('/pdf/reorder', formData, sessionId, 'Reorder failed', callbacks);
   },
 
   // Admin
@@ -368,7 +409,7 @@ export async function uploadChunks(file, onProgress) {
   return uploadId;
 }
 
-export async function finalizeUpload(uploadId, filename, sessionId, trimOptions) {
+export async function finalizeUpload(uploadId, filename, sessionId, trimOptions, callbacks = {}) {
   const body = {
     uploadId,
     filename,
@@ -393,12 +434,22 @@ export async function finalizeUpload(uploadId, filename, sessionId, trimOptions)
     throw new Error(error.error || 'Finalize failed');
   }
 
-  return finalizeResponse.json();
+  const { jobId } = await finalizeResponse.json();
+  if (!jobId) throw new Error('Finalize failed');
+
+  const job = await waitForJob(jobId, sessionId, 'Clip processing failed', 10 * 60 * 1000, callbacks);
+  const clip = job.outputJson?.clip;
+  if (!clip || !clip.token) throw new Error('Clip processing failed');
+
+  return {
+    ...clip,
+    url: `${window.location.origin}${clip.url || `/c/${clip.token}`}`
+  };
 }
 
-export async function chunkedUpload(file, sessionId, trimOptions, onProgress) {
+export async function chunkedUpload(file, sessionId, trimOptions, onProgress, callbacks = {}) {
   const uploadId = await uploadChunks(file, onProgress);
-  return finalizeUpload(uploadId, file.name, sessionId, trimOptions);
+  return finalizeUpload(uploadId, file.name, sessionId, trimOptions, callbacks);
 }
 
 export function downloadBlob(blob, filename) {

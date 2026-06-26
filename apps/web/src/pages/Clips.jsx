@@ -6,6 +6,7 @@ import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import FileUploader from '../components/FileUploader';
 import useToast from '../hooks/useToast';
+import JobProgress from '../components/JobProgress';
 
 function formatTime(seconds) {
   if (seconds == null || Number.isNaN(seconds)) return '0:00';
@@ -44,6 +45,7 @@ function Clips({ sessionId, isAdmin }) {
   const [uploading, setUploading] = useState(false);
   const [uploadPhase, setUploadPhase] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(null);
+  const [currentJob, setCurrentJob] = useState(null);
   const [error, setError] = useState(null);
   const [createdClip, setCreatedClip] = useState(null);
   const [toast, showToast] = useToast();
@@ -96,6 +98,7 @@ function Clips({ sessionId, isAdmin }) {
       setError(null);
       setUploadProgress(null);
       setUploadPhase(null);
+      setCurrentJob(null);
       return;
     }
     objectUrlRef.current = URL.createObjectURL(selectedFile);
@@ -110,6 +113,7 @@ function Clips({ sessionId, isAdmin }) {
     setError(null);
     setUploadProgress(null);
     setUploadPhase(null);
+    setCurrentJob(null);
   };
 
   const handleLoadedMetadata = () => {
@@ -191,6 +195,7 @@ function Clips({ sessionId, isAdmin }) {
     setUploading(true);
     setError('');
     setCreatedClip(null);
+    setCurrentJob(null);
 
     try {
       const hasTrim = trimEnd > 0 && trimEnd > trimStart;
@@ -209,7 +214,7 @@ function Clips({ sessionId, isAdmin }) {
       setUploadPhase('processing');
       setUploadProgress(null);
 
-      const result = await finalizeUpload(uploadId, file.name, sessionId, trimOptions);
+      const result = await finalizeUpload(uploadId, file.name, sessionId, trimOptions, { onJobUpdate: setCurrentJob });
 
       setCreatedClip(result);
       setFile(null);
@@ -221,6 +226,7 @@ function Clips({ sessionId, isAdmin }) {
       setUploading(false);
       setUploadProgress(null);
       setUploadPhase(null);
+      setCurrentJob(null);
     }
   };
 
@@ -433,6 +439,12 @@ function Clips({ sessionId, isAdmin }) {
                   </div>
                 </div>
               )}
+
+              <JobProgress
+                job={currentJob}
+                title={currentJob?.status === 'queued' ? 'Waiting to create clip' : 'Creating clip'}
+                fallbackMessage="Worker is preparing the clip"
+              />
 
               {createdClip && (
                 <div style={{

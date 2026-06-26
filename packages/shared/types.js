@@ -69,7 +69,10 @@ const JOB_STATUS = {
 
 const JOB_TYPE = {
   DOWNLOAD: 'download',
-  CONVERT: 'convert'
+  CONVERT: 'convert',
+  PDF: 'pdf',
+  GIF: 'gif',
+  CLIP: 'clip'
 };
 
 module.exports = { PRESETS, JOB_STATUS, JOB_TYPE };

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Film, Upload, Play, Pause, Download, RotateCcw, Sparkles, Scissors, SlidersHorizontal, Wand2 } from 'lucide-react';
 import { api, formatBytes } from '../api';
 import FileUploader from '../components/FileUploader';
+import JobProgress from '../components/JobProgress';
 
 function clamp(value, min, max, fallback) {
   const n = Number(value);
@@ -14,11 +15,12 @@ function formatSeconds(value) {
   return `${value.toFixed(2)}s`;
 }
 
-export default function GifMaker({ isAdmin }) {
+export default function GifMaker({ sessionId, isAdmin }) {
   const [file, setFile] = useState(null);
   const [meta, setMeta] = useState(null);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [currentJob, setCurrentJob] = useState(null);
   const [error, setError] = useState('');
   const [previewUrl, setPreviewUrl] = useState('');
   const [resultUrl, setResultUrl] = useState('');
@@ -451,10 +453,11 @@ export default function GifMaker({ isAdmin }) {
     if (!file) return;
 
     setProcessing(true);
+    setCurrentJob(null);
     setError('');
 
     try {
-      const blob = await api.gifProcess(file, buildOptions(preview));
+      const blob = await api.gifProcess(file, buildOptions(preview), sessionId, { onJobUpdate: setCurrentJob });
       const url = URL.createObjectURL(blob);
       if (preview) {
         setPreviewUrl(url);
@@ -466,6 +469,7 @@ export default function GifMaker({ isAdmin }) {
       setError(err.message);
     } finally {
       setProcessing(false);
+      setCurrentJob(null);
     }
   };
 
@@ -483,6 +487,7 @@ export default function GifMaker({ isAdmin }) {
     setFile(null);
     setMeta(null);
     setError('');
+    setCurrentJob(null);
     setPreviewUrl('');
     setResultUrl('');
     setResultSize(null);
@@ -906,6 +911,11 @@ export default function GifMaker({ isAdmin }) {
               <button className="btn btn-primary" disabled={!file || processing} onClick={() => handleGenerate(false)}>
                 {processing ? <><Play size={16} /> Processing...</> : <><Sparkles size={16} /> Render Final GIF</>}
               </button>
+              <JobProgress
+                job={currentJob}
+                title={currentJob?.status === 'queued' ? 'Waiting to render GIF' : 'Rendering GIF'}
+                fallbackMessage="Worker is rendering frames"
+              />
               <button className="btn btn-secondary" onClick={resetAll}>
                 <RotateCcw size={16} /> Reset Session
               </button>

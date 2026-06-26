@@ -19,14 +19,25 @@ const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000,http:
 const BASE_URL = process.env.BASE_URL || null;
 
 const CRAWLER_RE = /discordbot|twitterbot|slackbot|facebookexternalhit|linkedinbot|telegrambot|whatsapp|skype|googlebot|bingbot|opengraph/i;
+const SHUTDOWN_GRACE_MS = 30000;
+let shuttingDown = false;
+let activeRequests = 0;
 
 function getAdminToken(req) {
   return req.cookies?.admin_token || null;
 }
 
+function escapeHtmlAttr(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // Middleware
 app.disable('x-powered-by');
-app.set('trust proxy', 1);
+app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -60,6 +71,23 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: '1mb' }));
+app.use((req, res, next) => {
+  if (shuttingDown && req.path !== '/api/health') {
+    res.setHeader('Connection', 'close');
+    return res.status(503).json({ error: 'Server is shutting down' });
+  }
+
+  activeRequests++;
+  let released = false;
+  function releaseRequest() {
+    if (released) return;
+    released = true;
+    activeRequests = Math.max(0, activeRequests - 1);
+  }
+  res.on('finish', releaseRequest);
+  res.on('close', releaseRequest);
+  next();
+});
 app.use('/api', rateLimit({
   windowMs: 60 * 1000,
   max: 180,
@@ -148,24 +176,28 @@ app.get('/c/:token', (req, res) => {
   const streamUrl = `${origin}/api/clip/${req.params.token}/stream`;
   const w = clip.width || 1280;
   const h = clip.height || 720;
+  const title = escapeHtmlAttr(clip.filename || 'Video Clip');
+  const description = escapeHtmlAttr(`${clip.duration ? Math.round(clip.duration) + 's' : 'Video clip'}${clip.size ? ' \u2022 ' + (clip.size / (1024*1024)).toFixed(1) + 'MB' : ''}`);
+  const safeClipUrl = escapeHtmlAttr(clipUrl);
+  const safeStreamUrl = escapeHtmlAttr(streamUrl);
 
   res.type('html').send(`<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
 <meta property="og:type" content="video.other">
-<meta property="og:title" content="${clip.filename || 'Video Clip'}">
-<meta property="og:description" content="${clip.duration ? Math.round(clip.duration) + 's' : 'Video clip'}${clip.size ? ' \u2022 ' + (clip.size / (1024*1024)).toFixed(1) + 'MB' : ''}">
-<meta property="og:url" content="${clipUrl}">
-<meta property="og:video" content="${streamUrl}">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${description}">
+<meta property="og:url" content="${safeClipUrl}">
+<meta property="og:video" content="${safeStreamUrl}">
 <meta property="og:video:type" content="video/mp4">
 <meta property="og:video:width" content="${w}">
 <meta property="og:video:height" content="${h}">
 <meta name="twitter:card" content="player">
-<meta name="twitter:player" content="${streamUrl}">
+<meta name="twitter:player" content="${safeStreamUrl}">
 <meta name="twitter:player:width" content="${w}">
 <meta name="twitter:player:height" content="${h}">
-<meta name="twitter:title" content="${clip.filename || 'Video Clip'}">
-<meta http-equiv="refresh" content="0;url=${clipUrl}/embed">
+<meta name="twitter:title" content="${title}">
+<meta http-equiv="refresh" content="0;url=${safeClipUrl}/embed">
 </head></html>`);
 });
 
@@ -181,6 +213,9 @@ app.get('/c/:token/embed', (req, res) => {
 
 // Health check
 app.get('/api/health', (req, res) => {
+  if (shuttingDown) {
+    return res.status(503).json({ status: 'shutting_down', activeRequests, timestamp: new Date().toISOString() });
+  }
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
@@ -206,3 +241,22 @@ server.timeout = 300000;
 server.headersTimeout = 10000;
 server.keepAliveTimeout = 30000;
 server.requestTimeout = 300000;
+
+function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Received ${signal}, closing API server. Active requests: ${activeRequests}`);
+
+  server.close(() => {
+    console.log('API server closed cleanly');
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    console.error(`Forced API shutdown after ${SHUTDOWN_GRACE_MS}ms. Active requests: ${activeRequests}`);
+    process.exit(1);
+  }, SHUTDOWN_GRACE_MS).unref();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

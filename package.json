@@ -2,6 +2,10 @@
   "name": "tools-monorepo",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
+  "overrides": {
+    "path-to-regexp": "0.1.13"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -12,6 +16,7 @@
     "dev:worker": "npm run dev --workspace=apps/worker",
     "dev:web": "npm run dev --workspace=apps/web",
     "build": "npm run build --workspace=apps/web",
+    "smoke:docker": "node scripts/smoke-docker.js",
     "start:api": "npm run start --workspace=apps/api",
     "start:worker": "npm run start --workspace=apps/worker"
   },

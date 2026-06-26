@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { api, formatBytes, formatDate, getFileUrl } from '../api';
 import { Link } from 'react-router-dom';
 import { LayoutDashboard, RefreshCw, FolderOpen, Clock, CheckCircle, XCircle, Zap, Download, FileAudio, Link as LinkIcon, Database, ClipboardList, Settings, Inbox, Archive } from 'lucide-react';
+import JobProgress from '../components/JobProgress';
 import Pagination from '../components/Pagination';
 
 function Dashboard({ sessionId, isAdmin }) {
@@ -35,8 +36,19 @@ function Dashboard({ sessionId, isAdmin }) {
     return () => clearInterval(interval);
   }, []);
 
-  const myJobs = useMemo(() => jobs.filter(j => j.inputJson?.sessionId === sessionId), [jobs, sessionId]);
+  const myJobs = useMemo(() => jobs.filter(j => j.sessionId === sessionId || j.inputJson?.sessionId === sessionId), [jobs, sessionId]);
   const filteredJobs = useMemo(() => filter === 'all' ? jobs : filter === 'mine' ? myJobs : jobs.filter(j => j.type === filter), [filter, jobs, myJobs]);
+
+  function getJobRoute(type) {
+    const routes = {
+      download: '/downloader',
+      convert: '/converter',
+      pdf: '/pdf',
+      gif: '/gif',
+      clip: '/clips'
+    };
+    return routes[type] || '/';
+  }
 
   const stats = useMemo(() => ({
     total: jobs.length,
@@ -207,6 +219,9 @@ function Dashboard({ sessionId, isAdmin }) {
               <option value="mine">My Jobs</option>
               <option value="download">Downloads</option>
               <option value="convert">Conversions</option>
+              <option value="pdf">PDF</option>
+              <option value="gif">GIF</option>
+              <option value="clip">Clips</option>
             </select>
           </div>
           <div className="table-container">
@@ -230,7 +245,7 @@ function Dashboard({ sessionId, isAdmin }) {
                   {filteredJobs.slice((recentJobsPage - 1) * ITEMS_PER_PAGE, recentJobsPage * ITEMS_PER_PAGE).map(job => (
                     <tr key={job.id}>
                       <td>
-                        <Link to={`/${job.type === 'download' ? 'downloader' : job.type === 'convert' ? 'converter' : job.type}`} style={{ color: 'inherit', textDecoration: 'none', display: 'flex', alignItems: 'center' }}>
+                        <Link to={getJobRoute(job.type)} style={{ color: 'inherit', textDecoration: 'none', display: 'flex', alignItems: 'center' }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--accent-text)' }}>
                             {job.type === 'download' ? <Download size={18} /> :
                               job.type === 'convert' ? <FileAudio size={18} /> :
@@ -253,21 +268,11 @@ function Dashboard({ sessionId, isAdmin }) {
                         </span>
                       </td>
                       <td>
-                        {job.status === 'done' ? (
-                          <div className="progress-wrapper">
-                            <div className="progress-bar">
-                              <div className="progress-fill" style={{ width: '100%', backgroundColor: 'var(--success)' }} />
-                            </div>
-                            <span className="progress-text">100%</span>
-                          </div>
-                        ) : job.progress !== null ? (
-                          <div className="progress-wrapper">
-                            <div className="progress-bar">
-                              <div className="progress-fill" style={{ width: `${job.progress}%` }} />
-                            </div>
-                            <span className="progress-text">{job.progress}%</span>
-                          </div>
-                        ) : '-'}
+                        <JobProgress
+                          job={job}
+                          title={job.status === 'done' ? 'Completed' : 'Progress'}
+                          compact
+                        />
                       </td>
                       <td style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
                         {formatDate(job.createdAt)}

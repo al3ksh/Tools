@@ -1,7 +1,7 @@
 -- Jobs table
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,
-  type TEXT NOT NULL CHECK(type IN ('download', 'convert')),
+  type TEXT NOT NULL CHECK(type IN ('download', 'convert', 'pdf', 'gif', 'clip')),
   status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued', 'running', 'done', 'failed', 'expired', 'deleted')),
   progress INTEGER,
   createdAt TEXT NOT NULL,
@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   inputJson TEXT,
   outputJson TEXT,
   error TEXT,
-  logsTail TEXT
+  logsTail TEXT,
+  isCancelling INTEGER DEFAULT 0
 );
 
 -- Shortlinks table
@@ -38,7 +39,8 @@ CREATE TABLE IF NOT EXISTS drops (
   downloads INTEGER DEFAULT 0,
   expiresAt TEXT,
   deleted INTEGER DEFAULT 0,
-  sessionId TEXT
+  sessionId TEXT,
+  password TEXT
 );
 
 -- Clips table

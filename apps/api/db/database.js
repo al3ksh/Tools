@@ -15,6 +15,7 @@ const db = new Database(DB_PATH);
 // Enable WAL mode for better concurrency
 db.pragma('journal_mode = WAL');
 db.pragma('busy_timeout = 5000');
+db.pragma('journal_size_limit = 67108864');
 
 // Initialize schema
 const schemaPath = path.join(__dirname, 'schema.sql');
@@ -23,6 +24,52 @@ db.exec(schema);
 
 // Migration: Add missing columns if they don't exist
 try {
+  const preflightColumns = db.prepare("PRAGMA table_info(jobs)").all().map(c => c.name);
+  if (!preflightColumns.includes('expiresAt')) db.exec('ALTER TABLE jobs ADD COLUMN expiresAt TEXT');
+  if (!preflightColumns.includes('deletedAt')) db.exec('ALTER TABLE jobs ADD COLUMN deletedAt TEXT');
+  if (!preflightColumns.includes('deleted')) db.exec('ALTER TABLE jobs ADD COLUMN deleted INTEGER DEFAULT 0');
+  if (!preflightColumns.includes('sessionId')) db.exec('ALTER TABLE jobs ADD COLUMN sessionId TEXT');
+  if (!preflightColumns.includes('isCancelling')) db.exec('ALTER TABLE jobs ADD COLUMN isCancelling INTEGER DEFAULT 0');
+
+  const jobsCreateSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'").get()?.sql || '';
+  if (jobsCreateSql && (!jobsCreateSql.includes("'pdf'") || !jobsCreateSql.includes("'gif'") || !jobsCreateSql.includes("'clip'"))) {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE jobs_new (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL CHECK(type IN ('download', 'convert', 'pdf', 'gif', 'clip')),
+          status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued', 'running', 'done', 'failed', 'expired', 'deleted')),
+          progress INTEGER,
+          createdAt TEXT NOT NULL,
+          startedAt TEXT,
+          finishedAt TEXT,
+          expiresAt TEXT,
+          deletedAt TEXT,
+          deleted INTEGER DEFAULT 0,
+          sessionId TEXT,
+          inputJson TEXT,
+          outputJson TEXT,
+          error TEXT,
+          logsTail TEXT,
+          isCancelling INTEGER DEFAULT 0
+        )
+      `);
+      db.exec(`
+        INSERT INTO jobs_new (id, type, status, progress, createdAt, startedAt, finishedAt, expiresAt, deletedAt, deleted, sessionId, inputJson, outputJson, error, logsTail, isCancelling)
+        SELECT id, type, status, progress, createdAt, startedAt, finishedAt, expiresAt, deletedAt, deleted, sessionId, inputJson, outputJson, error, logsTail, isCancelling
+        FROM jobs
+      `);
+      db.exec('DROP TABLE jobs');
+      db.exec('ALTER TABLE jobs_new RENAME TO jobs');
+    })();
+    db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, createdAt)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_expires ON jobs(expiresAt, status)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_session ON jobs(sessionId)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_type ON jobs(type)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_cancelling ON jobs(isCancelling)');
+    console.log('Migration: Rebuilt jobs table with pdf/gif/clip job types');
+  }
+
   const columns = db.prepare("PRAGMA table_info(jobs)").all();
   const columnNames = columns.map(c => c.name);
 

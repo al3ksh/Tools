@@ -6,8 +6,9 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
-const { DATA_DIR } = require('../db/database');
-const { clampNumber } = require('./utils');
+const { statements, DATA_DIR } = require('../db/database');
+const { heavyWorkLimit } = require('../lib/heavyWork');
+const { clampNumber, createDiskSpaceGuard } = require('./utils');
 
 const gifRateLimit = rateLimit({
   windowMs: 60 * 1000,
@@ -23,20 +24,24 @@ if (!fs.existsSync(gifTempDir)) {
 }
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, gifTempDir),
+  destination: (req, file, cb) => {
+    fs.mkdirSync(gifTempDir, { recursive: true });
+    cb(null, gifTempDir);
+  },
   filename: (req, file, cb) => {
     cb(null, `${uuidv4()}${path.extname(file.originalname)}`);
-  },
+  }
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: 500 * 1024 * 1024 }
 });
 const uploadGuest = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 }
 });
+const diskSpaceGuard = createDiskSpaceGuard({ dataDir: DATA_DIR, minFreeBytes: 512 * 1024 * 1024 });
 
 function cleanupFiles(files) {
   for (const file of files) {
@@ -46,37 +51,6 @@ function cleanupFiles(files) {
       // Ignore cleanup failures.
     }
   }
-}
-
-function runProcess(command, args, timeoutMs = 120000) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args);
-    let stderr = '';
-    let timedOut = false;
-
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGKILL');
-      reject(new Error(`${command} timed out after ${timeoutMs / 1000}s`));
-    }, timeoutMs);
-
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-      if (stderr.length > 20000) stderr = stderr.slice(-20000);
-    });
-
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      if (timedOut) return;
-      if (code === 0) resolve();
-      else reject(new Error(`${command} exited with code ${code}: ${stderr.slice(-2000)}`));
-    });
-
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-  });
 }
 
 function runFfprobe(inputPath) {
@@ -141,25 +115,8 @@ function isStaticImage(filePath) {
   return ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.tif'].includes(ext);
 }
 
-function buildFilterChain({ fps, width, speed, reverse }) {
-  const filters = [];
-
-  if (speed !== 1) {
-    filters.push(`setpts=PTS/${speed}`);
-  }
-
-  if (reverse) {
-    filters.push('reverse');
-  }
-
-  filters.push(`fps=${fps}`);
-  filters.push(`scale=${width}:-1:flags=lanczos`);
-
-  return filters.join(',');
-}
-
 // POST /api/gif/info - get media metadata for GIF/video input
-router.post('/info', gifRateLimit, (req, res, next) => {
+router.post('/info', gifRateLimit, heavyWorkLimit, diskSpaceGuard, (req, res, next) => {
   const uploader = req.isAdmin ? upload : uploadGuest;
   uploader.single('file')(req, res, (err) => {
     if (err) {
@@ -203,7 +160,7 @@ router.post('/info', gifRateLimit, (req, res, next) => {
 });
 
 // POST /api/gif/process - create/edit GIF from uploaded video or GIF
-router.post('/process', gifRateLimit, (req, res, next) => {
+router.post('/process', gifRateLimit, diskSpaceGuard, (req, res, next) => {
   const uploader = req.isAdmin ? upload : uploadGuest;
   uploader.single('file')(req, res, (err) => {
     if (err) {
@@ -214,12 +171,9 @@ router.post('/process', gifRateLimit, (req, res, next) => {
     }
     next();
   });
-}, async (req, res) => {
-  const tempFiles = [];
-
+}, (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    tempFiles.push(req.file.path);
 
     const fps = clampNumber(req.body.fps, 5, 30, 15);
     const widthRaw = clampNumber(req.body.width, 120, 1080, 480);
@@ -230,65 +184,37 @@ router.post('/process', gifRateLimit, (req, res, next) => {
     const preview = String(req.body.preview) === 'true';
     const staticImage = isStaticImage(req.file.path);
 
-    const finalFps = preview ? Math.min(fps, 12) : fps;
-    const finalWidth = preview ? Math.min(width, 360) : width;
-
     const startSec = req.body.startSec !== undefined ? Number(req.body.startSec) : null;
     const endSec = req.body.endSec !== undefined ? Number(req.body.endSec) : null;
 
-    const outputPath = path.join(gifTempDir, `${uuidv4()}.gif`);
-    tempFiles.push(outputPath);
-
-    const scaleFilter = `scale=${finalWidth}:-1:flags=lanczos`;
-    const paletteFilter = `${scaleFilter},split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=bayer:bayer_scale=5`;
-
-    let ffmpegArgs = ['-y'];
-
-    if (staticImage) {
-      ffmpegArgs.push('-i', req.file.path);
-      ffmpegArgs.push('-vf', paletteFilter);
-      ffmpegArgs.push('-loop', '0');
-      ffmpegArgs.push('-an', outputPath);
-    } else {
-      const chain = buildFilterChain({
-        fps: finalFps,
-        width: finalWidth,
+    const sessionId = req.isAdmin ? 'admin' : req.body.sessionId;
+    const jobId = uuidv4();
+    const createdAt = new Date().toISOString();
+    const inputJson = JSON.stringify({
+      files: [{
+        path: path.relative(DATA_DIR, req.file.path),
+        originalName: req.file.originalname,
+        size: req.file.size
+      }],
+      options: {
+        fps,
+        width,
         speed,
+        loop,
         reverse,
-      });
-
-      if (!Number.isNaN(startSec) && startSec !== null && startSec >= 0) {
-        ffmpegArgs.push('-ss', String(startSec));
-      }
-
-      if (!Number.isNaN(endSec) && endSec !== null && endSec > 0) {
-        ffmpegArgs.push('-to', String(endSec));
-      }
-
-      ffmpegArgs.push('-i', req.file.path);
-      ffmpegArgs.push('-filter_complex', `[0:v]${chain},split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=bayer:bayer_scale=5`);
-      ffmpegArgs.push('-loop', String(loop));
-      ffmpegArgs.push('-an', outputPath);
-    }
-
-    await runProcess('ffmpeg', ffmpegArgs);
-
-    const stat = fs.statSync(outputPath);
-
-    res.setHeader('Content-Type', 'image/gif');
-    res.setHeader('Content-Disposition', `attachment; filename="${preview ? 'preview' : 'output'}.gif"`);
-    res.setHeader('X-Output-Size', String(stat.size));
-    const filesToClean = [...tempFiles];
-    res.sendFile(outputPath, (err) => {
-      cleanupFiles(filesToClean);
-      if (err) console.error('Send error:', err.message);
+        preview,
+        staticImage,
+        startSec: Number.isNaN(startSec) ? null : startSec,
+        endSec: Number.isNaN(endSec) ? null : endSec
+      },
+      isAdmin: req.isAdmin
     });
-    tempFiles.length = 0;
-    return;
+
+    statements.createJob.run(jobId, 'gif', createdAt, inputJson, sessionId || null);
+    res.json({ jobId });
   } catch (err) {
+    if (req.file) cleanupFiles([req.file.path]);
     res.status(500).json({ error: 'Internal server error' });
-  } finally {
-    cleanupFiles(tempFiles);
   }
 });
 

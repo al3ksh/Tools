@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { statements, DATA_DIR } = require('../db/database');
-const { safePath, setContentDisposition, createGuestSizeLimit } = require('./utils');
+const { safePath, setContentDisposition, createGuestSizeLimit, createDiskSpaceGuard } = require('./utils');
 
 const dropsDir = path.join(DATA_DIR, 'drops');
 if (!fs.existsSync(dropsDir)) {
@@ -15,6 +15,7 @@ if (!fs.existsSync(dropsDir)) {
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
+    fs.mkdirSync(dropsDir, { recursive: true });
     cb(null, dropsDir);
   },
   filename: (req, file, cb) => {
@@ -28,6 +29,7 @@ const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 * 1024 } })
 const uploadGuest = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 const dropSizeLimit = createGuestSizeLimit(50);
+const diskSpaceGuard = createDiskSpaceGuard({ dataDir: DATA_DIR, minFreeBytes: 512 * 1024 * 1024 });
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16);
@@ -47,7 +49,7 @@ function verifyPassword(password, stored) {
 }
 
 // POST /api/drop/upload - upload a drop file
-router.post('/upload', dropSizeLimit, (req, res, next) => {
+router.post('/upload', diskSpaceGuard, dropSizeLimit, (req, res, next) => {
   const uploader = req.isAdmin ? upload : uploadGuest;
   uploader.single('file')(req, res, (err) => {
     if (err) {

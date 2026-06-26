@@ -3,9 +3,8 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { spawn } = require('child_process');
 const { statements, DATA_DIR } = require('../db/database');
-const { safePath } = require('./utils');
+const { safePath, createDiskSpaceGuard } = require('./utils');
 const rateLimit = require('express-rate-limit');
 
 const CLIPS_DIR = path.join(DATA_DIR, 'clips');
@@ -16,6 +15,10 @@ if (!fs.existsSync(CHUNKS_DIR)) fs.mkdirSync(CHUNKS_DIR, { recursive: true });
 
 const MAX_GUEST = 200 * 1024 * 1024;
 const MAX_ADMIN = 5 * 1024 * 1024 * 1024;
+const MAX_CHUNK_SIZE = 25 * 1024 * 1024;
+const UPLOAD_ID_RE = /^[a-zA-Z0-9_-]{8,80}$/;
+const UPLOAD_META = '.upload.json';
+const diskSpaceGuard = createDiskSpaceGuard({ dataDir: DATA_DIR, minFreeBytes: 512 * 1024 * 1024 });
 
 const MIME_TYPES = {
   '.mp4': 'video/mp4',
@@ -29,6 +32,98 @@ setInterval(() => {
   if (uploadSizes.size > 1000) uploadSizes.clear();
 }, 60 * 60 * 1000);
 
+function getUploadLimit(req) {
+  return req.isAdmin ? MAX_ADMIN : MAX_GUEST;
+}
+
+function parseChunkName(filename) {
+  const match = filename.match(/^(\d+)-(\d+)\.chunk$/);
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start) return null;
+  return { start, end, filename };
+}
+
+function getExistingUploadSize(uploadDir) {
+  if (!fs.existsSync(uploadDir)) return 0;
+  return fs.readdirSync(uploadDir).reduce((sum, file) => {
+    const chunk = parseChunkName(file);
+    if (!chunk) return sum;
+    return sum + fs.statSync(path.join(uploadDir, file)).size;
+  }, 0);
+}
+
+function getUploadMeta(uploadDir) {
+  const metaPath = path.join(uploadDir, UPLOAD_META);
+  if (!fs.existsSync(metaPath)) return null;
+  try {
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    if (!Number.isSafeInteger(meta.total) || meta.total <= 0) return null;
+    return meta;
+  } catch (e) {
+    return null;
+  }
+}
+
+function writeUploadMeta(uploadDir, total) {
+  fs.writeFileSync(path.join(uploadDir, UPLOAD_META), JSON.stringify({
+    total,
+    updatedAt: new Date().toISOString()
+  }));
+}
+
+function getSortedChunks(processingDir, expectedTotal) {
+  const chunks = fs.readdirSync(processingDir)
+    .map(parseChunkName)
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start);
+
+  let nextStart = 0;
+  for (const chunk of chunks) {
+    if (chunk.start !== nextStart) {
+      throw new Error('Incomplete upload');
+    }
+    const actualSize = fs.statSync(path.join(processingDir, chunk.filename)).size;
+    const declaredSize = chunk.end - chunk.start + 1;
+    if (actualSize !== declaredSize) {
+      throw new Error('Corrupt upload chunk');
+    }
+    nextStart = chunk.end + 1;
+  }
+
+  if (chunks.length === 0 || nextStart !== expectedTotal) {
+    throw new Error('Incomplete upload');
+  }
+
+  return chunks;
+}
+
+function parseRangeHeader(range, size) {
+  const match = range.match(/^bytes=(\d*)-(\d*)$/);
+  if (!match) return null;
+
+  let start;
+  let end;
+  if (match[1] === '' && match[2] === '') return null;
+
+  if (match[1] === '') {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return null;
+    start = Math.max(size - suffixLength, 0);
+    end = size - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] === '' ? size - 1 : Number(match[2]);
+  }
+
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || start >= size) {
+    return null;
+  }
+
+  return { start, end: Math.min(end, size - 1) };
+}
+
 const chunkRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
@@ -37,10 +132,11 @@ const chunkRateLimit = rateLimit({
   message: { error: 'Too many upload requests. Please slow down.' },
 });
 
-router.post('/upload-chunk', chunkRateLimit, (req, res) => {
+router.post('/upload-chunk', chunkRateLimit, diskSpaceGuard, (req, res) => {
   try {
     const uploadId = req.headers['x-upload-id'];
     if (!uploadId) return res.status(400).json({ error: 'Missing X-Upload-Id header' });
+    if (!UPLOAD_ID_RE.test(uploadId)) return res.status(400).json({ error: 'Invalid upload id' });
 
     const contentRange = req.headers['content-range'];
     if (!contentRange) return res.status(400).json({ error: 'Missing Content-Range header' });
@@ -48,35 +144,91 @@ router.post('/upload-chunk', chunkRateLimit, (req, res) => {
     const match = contentRange.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
     if (!match) return res.status(400).json({ error: 'Invalid Content-Range format' });
 
-    const start = parseInt(match[1]);
-    const end = parseInt(match[2]);
-    const total = parseInt(match[3]);
+    const start = Number(match[1]);
+    const end = Number(match[2]);
+    const total = Number(match[3]);
+    const limit = getUploadLimit(req);
 
-    if (!req.isAdmin && total > MAX_GUEST) {
-      return res.status(413).json({ error: `File too large. Guest limit is 200MB.` });
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || !Number.isSafeInteger(total) || start < 0 || end < start || end >= total || total <= 0) {
+      return res.status(400).json({ error: 'Invalid Content-Range values' });
+    }
+
+    if (total > limit) {
+      return res.status(413).json({ error: req.isAdmin ? 'File too large. Admin limit is 5GB.' : 'File too large. Guest limit is 200MB.' });
     }
 
     const chunkSize = end - start + 1;
-    const currentTotal = uploadSizes.get(uploadId) || 0;
-    const newTotal = currentTotal + chunkSize;
-    if (!req.isAdmin && newTotal > MAX_GUEST) {
-      return res.status(413).json({ error: `File too large. Guest limit is 200MB.` });
+    if (chunkSize > MAX_CHUNK_SIZE) {
+      return res.status(413).json({ error: 'Chunk too large. Maximum chunk size is 25MB.' });
     }
-    uploadSizes.set(uploadId, newTotal);
+
+    const contentLength = req.headers['content-length'] ? Number(req.headers['content-length']) : null;
+    if (contentLength != null && (!Number.isSafeInteger(contentLength) || contentLength !== chunkSize)) {
+      return res.status(400).json({ error: 'Content-Length does not match Content-Range' });
+    }
 
     const uploadDir = safePath(CHUNKS_DIR, uploadId);
     if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+    const meta = getUploadMeta(uploadDir);
+    if (meta && meta.total !== total) {
+      return res.status(400).json({ error: 'Upload total size changed' });
+    }
+    if (!meta) writeUploadMeta(uploadDir, total);
 
     const chunkPath = path.join(uploadDir, `${start}-${end}.chunk`);
-    const writeStream = fs.createWriteStream(chunkPath);
+    const tempChunkPath = `${chunkPath}.tmp`;
+    const currentTotal = uploadSizes.get(uploadId) || getExistingUploadSize(uploadDir);
+    const existingSize = fs.existsSync(chunkPath) ? fs.statSync(chunkPath).size : 0;
+    if (currentTotal - existingSize + chunkSize > limit) {
+      return res.status(413).json({ error: req.isAdmin ? 'File too large. Admin limit is 5GB.' : 'File too large. Guest limit is 200MB.' });
+    }
+
+    let received = 0;
+    let done = false;
+    const writeStream = fs.createWriteStream(tempChunkPath);
+
+    function fail(status, message) {
+      if (done) return;
+      done = true;
+      req.unpipe(writeStream);
+      writeStream.destroy();
+      try { fs.unlinkSync(tempChunkPath); } catch (e) {}
+      res.status(status).json({ error: message });
+    }
+
+    req.on('data', (chunk) => {
+      received += chunk.length;
+      if (received > chunkSize) {
+        fail(413, 'Chunk body is larger than Content-Range');
+      }
+    });
+
+    req.on('aborted', () => {
+      if (done) return;
+      done = true;
+      writeStream.destroy();
+      try { fs.unlinkSync(tempChunkPath); } catch (e) {}
+    });
+
     req.pipe(writeStream);
 
     writeStream.on('finish', () => {
-      res.status(200).json({ received: end - start + 1 });
+      if (done) return;
+      if (received !== chunkSize) {
+        return fail(400, 'Chunk body does not match Content-Range');
+      }
+      try {
+        fs.renameSync(tempChunkPath, chunkPath);
+        uploadSizes.set(uploadId, currentTotal - existingSize + chunkSize);
+        done = true;
+        res.status(200).json({ received: chunkSize });
+      } catch (e) {
+        fail(500, 'Internal server error');
+      }
     });
 
     writeStream.on('error', () => {
-      res.status(500).json({ error: 'Internal server error' });
+      fail(500, 'Internal server error');
     });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
@@ -85,17 +237,22 @@ router.post('/upload-chunk', chunkRateLimit, (req, res) => {
 
 router.post('/finalize', (req, res) => {
   try {
-    uploadSizes.delete(req.body.uploadId);
-
     const { uploadId, filename, sessionId, trimStart, trimEnd, duration } = req.body;
 
     if (!uploadId || !filename) {
       return res.status(400).json({ error: 'Missing uploadId or filename' });
     }
+    if (!UPLOAD_ID_RE.test(uploadId)) return res.status(400).json({ error: 'Invalid upload id' });
 
     const uploadDir = safePath(CHUNKS_DIR, uploadId);
     if (!fs.existsSync(uploadDir)) {
       return res.status(400).json({ error: 'Upload not found' });
+    }
+
+    const meta = getUploadMeta(uploadDir);
+    const expectedTotal = meta ? meta.total : uploadSizes.get(uploadId);
+    if (!Number.isSafeInteger(expectedTotal) || expectedTotal <= 0) {
+      return res.status(400).json({ error: 'Upload is incomplete or expired' });
     }
 
     const processingDir = uploadDir + '_processing';
@@ -105,213 +262,39 @@ router.post('/finalize', (req, res) => {
       return res.status(409).json({ error: 'Upload already being processed' });
     }
 
-    const token = uuidv4().substring(0, 12);
     const ext = path.extname(filename).toLowerCase() || '.mp4';
-    const outputPath = path.join(CLIPS_DIR, `${token}${ext}`);
-    const tempPath = path.join(CHUNKS_DIR, `${uploadId}_merged${ext}`);
 
-    const chunks = fs.readdirSync(processingDir)
-      .filter(f => f.endsWith('.chunk'))
-      .sort((a, b) => {
-        const aStart = parseInt(a.split('-')[0]);
-        const bStart = parseInt(b.split('-')[0]);
-        return aStart - bStart;
-      });
-
-    if (chunks.length === 0) {
-      return res.status(400).json({ error: 'No chunks found' });
+    try {
+      getSortedChunks(processingDir, expectedTotal);
+    } catch (e) {
+      try { fs.rmSync(processingDir, { recursive: true, force: true }); } catch (e2) {}
+      uploadSizes.delete(uploadId);
+      return res.status(400).json({ error: e.message });
     }
 
-    const writeStream = fs.createWriteStream(tempPath);
-    writeStream.on('error', () => {
-      res.status(500).json({ error: 'Internal server error' });
+    const jobId = uuidv4();
+    const createdAt = new Date().toISOString();
+    const jobSessionId = req.isAdmin ? 'admin' : sessionId;
+    const inputJson = JSON.stringify({
+      uploadId,
+      processingDir: path.relative(DATA_DIR, processingDir),
+      filename,
+      ext,
+      expectedTotal,
+      trimStart: trimStart != null ? Number(trimStart) : null,
+      trimEnd: trimEnd != null ? Number(trimEnd) : null,
+      duration: duration != null ? Number(duration) : null,
+      isAdmin: req.isAdmin
     });
 
-    let merged = 0;
-    function mergeNext() {
-      if (merged >= chunks.length) {
-        writeStream.end();
-        return;
-      }
-      const chunkData = fs.readFileSync(path.join(processingDir, chunks[merged]));
-      writeStream.write(chunkData, () => {
-        merged++;
-        mergeNext();
-      });
-    }
-    mergeNext();
-
-    writeStream.on('finish', () => {
-      try {
-        for (const chunkFile of chunks) {
-          fs.unlinkSync(path.join(processingDir, chunkFile));
-        }
-        fs.rmdirSync(processingDir);
-      } catch (e) { }
-
-      const needsTrim = (trimStart != null && trimStart > 0) || (trimEnd != null && duration != null && trimEnd < duration);
-
-      if (needsTrim) {
-        const ss = trimStart || 0;
-        const to = trimEnd || duration || null;
-
-        const args = ['-y', '-i', tempPath];
-        if (ss > 0) args.push('-ss', String(ss));
-        if (to != null && to > ss) args.push('-to', String(to));
-        args.push('-c', 'copy', '-avoid_negative_ts', 'make_zero', outputPath);
-
-        let responded = false;
-        const ffmpeg = spawn('ffmpeg', args);
-        ffmpeg.stderr.on('data', (data) => {
-          console.log('[clip trim]', String(data).trim());
-        });
-
-        const trimTimeout = setTimeout(() => {
-          ffmpeg.kill('SIGKILL');
-        }, 10 * 60 * 1000);
-
-        ffmpeg.on('close', (code, signal) => {
-          clearTimeout(trimTimeout);
-          try { fs.unlinkSync(tempPath); } catch (e) { }
-
-          if (responded) return;
-
-          if (signal === 'SIGKILL') {
-            responded = true;
-            try { fs.unlinkSync(outputPath); } catch (e) {}
-            return res.status(504).json({ error: 'Video trimming timed out' });
-          }
-
-          if (code !== 0 || !fs.existsSync(outputPath)) {
-            responded = true;
-            try { fs.unlinkSync(outputPath); } catch (e) {}
-            return res.status(500).json({ error: 'Video trimming failed' });
-          }
-
-          responded = true;
-          const trimmedDuration = to != null ? to - ss : duration;
-          finishClip(outputPath, token, ext, filename, sessionId, trimmedDuration, req, res);
-        });
-
-        ffmpeg.on('error', () => {
-          clearTimeout(trimTimeout);
-          try { fs.unlinkSync(tempPath); } catch (e) { }
-          if (!responded) {
-            responded = true;
-            res.status(500).json({ error: 'FFmpeg not available' });
-          }
-        });
-      } else {
-        try {
-          if (fs.existsSync(tempPath)) {
-            fs.copyFileSync(tempPath, outputPath);
-            fs.unlinkSync(tempPath);
-          }
-        } catch (e) {
-          try { fs.unlinkSync(tempPath); } catch (e2) { }
-          return res.status(500).json({ error: 'Failed to save clip' });
-        }
-        if (!fs.existsSync(outputPath)) {
-          return res.status(500).json({ error: 'Clip file not created' });
-        }
-        finishClip(outputPath, token, ext, filename, sessionId, duration, req, res);
-      }
-    });
+    statements.createJob.run(jobId, 'clip', createdAt, inputJson, jobSessionId || null);
+    uploadSizes.delete(uploadId);
+    res.json({ jobId });
   } catch (err) {
     if (err.message === 'Invalid path') return res.status(400).json({ error: 'Invalid upload' });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-function getVideoMeta(filePath) {
-  return new Promise((resolve) => {
-    const ffprobe = spawn('ffprobe', [
-      '-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', filePath
-    ]);
-    let stdout = '';
-    let resolved = false;
-
-    const timer = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        ffprobe.kill('SIGKILL');
-        resolve(null);
-      }
-    }, 30000);
-
-    ffprobe.stdout.on('data', (d) => { stdout += d; });
-    ffprobe.on('close', () => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(timer);
-      try {
-        const data = JSON.parse(stdout);
-        const video = (data.streams || []).find(s => s.codec_type === 'video');
-        const audio = (data.streams || []).find(s => s.codec_type === 'audio');
-        resolve({
-          width: video ? video.width : null,
-          height: video ? video.height : null,
-          fps: video && video.r_frame_rate ? parseFloat(video.r_frame_rate) : null,
-          bitrate: data.format && data.format.bit_rate ? parseInt(data.format.bit_rate) : null,
-          videoCodec: video ? video.codec_name : null,
-          audioCodec: audio ? audio.codec_name : null,
-        });
-      } catch (e) {
-        resolve(null);
-      }
-    });
-    ffprobe.on('error', () => {
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timer);
-        resolve(null);
-      }
-    });
-  });
-}
-
-async function finishClip(outputPath, token, ext, filename, sessionId, duration, req, res) {
-  try {
-    const meta = await getVideoMeta(outputPath);
-    const stat = fs.statSync(outputPath);
-    const createdAt = new Date().toISOString();
-    let expiresAt = null;
-    if (!req.isAdmin) {
-      expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    }
-
-    const actualDuration = duration || (meta && meta.duration) || 0;
-    statements.createClip.run(
-      token,
-      filename,
-      `clips/${token}${ext}`,
-      stat.size,
-      actualDuration ? parseFloat(actualDuration) : null,
-      meta ? meta.width : null,
-      meta ? meta.height : null,
-      meta ? meta.fps : null,
-      meta ? meta.bitrate : null,
-      meta ? meta.videoCodec : null,
-      meta ? meta.audioCodec : null,
-      createdAt,
-      expiresAt,
-      sessionId || null
-    );
-
-    if (sessionId && !req.isAdmin) {
-      try { statements.addSessionUsage.run(sessionId, stat.size, stat.size); } catch (e) {}
-    }
-
-    const protocol = req.protocol;
-    const host = req.get('host');
-    const url = `${protocol}://${host}/c/${token}`;
-
-    res.json({ token, url, filename, size: stat.size, meta });
-  } catch (err) {
-    try { fs.unlinkSync(outputPath); } catch (e) {}
-    res.status(500).json({ error: 'Failed to finalize clip' });
-  }
-}
 
 router.get('/:token/stream', (req, res) => {
   try {
@@ -339,20 +322,21 @@ router.get('/:token/stream', (req, res) => {
     const range = req.headers.range;
 
     if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
-      const chunkSize = end - start + 1;
+      const parsedRange = parseRangeHeader(range, stat.size);
+      if (!parsedRange) {
+        res.setHeader('Content-Range', `bytes */${stat.size}`);
+        return res.status(416).end();
+      }
 
       res.writeHead(206, {
-        'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+        'Content-Range': `bytes ${parsedRange.start}-${parsedRange.end}/${stat.size}`,
         'Accept-Ranges': 'bytes',
-        'Content-Length': chunkSize,
+        'Content-Length': parsedRange.end - parsedRange.start + 1,
         'Content-Type': contentType,
         'Cache-Control': 'public, max-age=3600',
       });
 
-      fs.createReadStream(filePath, { start, end }).pipe(res);
+      fs.createReadStream(filePath, { start: parsedRange.start, end: parsedRange.end }).pipe(res);
     } else {
       res.writeHead(200, {
         'Content-Length': stat.size,
@@ -428,7 +412,8 @@ router.delete('/:token', (req, res) => {
       return res.status(404).json({ error: 'Clip not found' });
     }
 
-    if (!req.isAdmin && (!clip.sessionId || clip.sessionId !== req.body.sessionId)) {
+    const sessionId = req.body.sessionId || req.query.sessionId;
+    if (!req.isAdmin && (!clip.sessionId || clip.sessionId !== sessionId)) {
       return res.status(403).json({ error: 'Not your clip' });
     }
 

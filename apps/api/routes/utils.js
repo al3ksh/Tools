@@ -4,6 +4,7 @@ const http = require('http');
 const https = require('https');
 const net = require('net');
 const path = require('path');
+const fs = require('fs');
 const { statements } = require('../db/database');
 const router = express.Router();
 
@@ -87,6 +88,31 @@ function createGuestSizeLimit(maxMB) {
       return res.status(413).json({ error: `File too large. Guest limit is ${maxMB}MB.` });
     }
     next();
+  };
+}
+
+function createDiskSpaceGuard(options = {}) {
+  const minFreeBytes = options.minFreeBytes || 512 * 1024 * 1024;
+  const dataDir = options.dataDir || process.env.DATA_DIR || '/data';
+
+  return (req, res, next) => {
+    try {
+      const contentLength = req.headers['content-length'] ? Number(req.headers['content-length']) : 0;
+      if (!Number.isFinite(contentLength) || contentLength < 0) {
+        return res.status(400).json({ error: 'Invalid Content-Length' });
+      }
+
+      const stat = fs.statfsSync(dataDir);
+      const availableBytes = stat.bavail * stat.bsize;
+      const requiredBytes = minFreeBytes + contentLength;
+      if (availableBytes < requiredBytes) {
+        return res.status(507).json({ error: 'Insufficient disk space on server' });
+      }
+
+      next();
+    } catch (err) {
+      next();
+    }
   };
 }
 
@@ -279,3 +305,4 @@ module.exports.setContentDisposition = setContentDisposition;
 module.exports.clampNumber = clampNumber;
 module.exports.checkJobLimit = checkJobLimit;
 module.exports.createGuestSizeLimit = createGuestSizeLimit;
+module.exports.createDiskSpaceGuard = createDiskSpaceGuard;

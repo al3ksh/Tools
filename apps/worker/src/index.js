@@ -1,12 +1,13 @@
 const Database = require('better-sqlite3');
-const { spawn, execFileSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const createJobProcessor = require('./jobs');
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const DB_PATH = path.join(DATA_DIR, 'tools.db');
 const POLL_INTERVAL = 1000;
 const MAX_PROCESS_TIME = 30 * 60 * 1000;
+const DB_SCHEMA_WAIT_MS = parseInt(process.env.DB_SCHEMA_WAIT_MS || '60000', 10);
 
 function safePath(baseDir, relativePath) {
   const resolved = path.resolve(baseDir, relativePath);
@@ -17,16 +18,43 @@ function safePath(baseDir, relativePath) {
   return resolved;
 }
 
-['downloads', 'converted', 'uploads', 'drops', 'clips-temp'].forEach(dir => {
+['downloads', 'converted', 'uploads', 'drops', 'clips', 'clips-temp'].forEach(dir => {
   const dirPath = path.join(DATA_DIR, dir);
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
   }
 });
 
-const db = new Database(DB_PATH);
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function openDatabase() {
+  const start = Date.now();
+  let lastError = null;
+
+  while (Date.now() - start < DB_SCHEMA_WAIT_MS) {
+    try {
+      const candidate = new Database(DB_PATH, { fileMustExist: true });
+      const jobsTable = candidate.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'jobs'").get();
+      if (jobsTable) return candidate;
+      candidate.close();
+      lastError = new Error('jobs table is not ready');
+    } catch (err) {
+      lastError = err;
+    }
+
+    console.log(`Waiting for API database schema: ${lastError.message}`);
+    sleepSync(2000);
+  }
+
+  throw lastError || new Error('Database schema is not ready');
+}
+
+const db = openDatabase();
 db.pragma('journal_mode = WAL');
 db.pragma('busy_timeout = 5000');
+db.pragma('journal_size_limit = 67108864');
 
 try {
   const sessionUsageTable = db.prepare("PRAGMA table_info(session_usage)").all();
@@ -86,6 +114,13 @@ const clearCancellingFlag = db.prepare(`UPDATE jobs SET isCancelling = 0 WHERE i
 const cancelIfCancellable = db.prepare(`
   UPDATE jobs SET status = 'failed', finishedAt = ?, error = ?, isCancelling = 0 WHERE id = ? AND status IN ('queued', 'running')
 `);
+const selectJobsWithInputs = db.prepare(`
+  SELECT inputJson FROM jobs WHERE deleted = 0 AND status IN ('queued', 'running', 'done')
+`);
+const createClip = db.prepare(`
+  INSERT INTO clips (token, filename, path, size, duration, width, height, fps, bitrate, videoCodec, audioCodec, createdAt, expiresAt, sessionId)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
 
 function updateProgress(jobId, progress, logsTail) {
   updateJobProgress.run(progress, logsTail, jobId);
@@ -107,294 +142,18 @@ function finishWithError(jobId, error) {
   finishJob.run('failed', new Date().toISOString(), null, error, null, jobId);
 }
 
-function checkDiskSpace(requiredMB = 500) {
-  try {
-    const stat = fs.statfsSync(DATA_DIR);
-    const availableBytes = stat.bavail * stat.bsize;
-    const availableMB = availableBytes / (1024 * 1024);
-    if (availableMB < requiredMB) {
-      return false;
-    }
-    return true;
-  } catch (e) {
-    return true;
-  }
-}
-
-function getAudioDuration(filePath) {
-  try {
-    const out = execFileSync('ffprobe', [
-      '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', filePath
-    ], { encoding: 'utf8', timeout: 30000 }).trim();
-    return parseFloat(out) || 0;
-  } catch (e) { return 0; }
-}
-
-async function processDownloadJob(job) {
-  const input = JSON.parse(job.inputJson);
-  const { url, preset, presetConfig, isAdmin } = input;
-  const jobId = job.id;
-
-  if (!checkDiskSpace(500)) {
-    finishWithError(jobId, 'Insufficient disk space on server');
-    return;
-  }
-
-  const outputDir = safePath(DATA_DIR, path.join('downloads', jobId));
-  fs.mkdirSync(outputDir, { recursive: true });
-  const outputTemplate = path.join(outputDir, '%(extractor)s_%(uploader)s_%(upload_date)s_%(title)s_%(id)s.%(ext)s');
-
-  const args = [
-    '--no-playlist',
-    '--no-warnings',
-    '--newline',
-    '--force-ipv4',
-    '--socket-timeout', '15',
-    '-o', outputTemplate,
-  ];
-
-  if (presetConfig.extractAudio) {
-    args.push('-x');
-    args.push('--audio-format', presetConfig.audioFormat);
-    args.push('--audio-quality', presetConfig.audioQuality);
-  } else {
-    args.push('-f', presetConfig.format);
-    if (presetConfig.mergeOutputFormat) {
-      args.push('--merge-output-format', presetConfig.mergeOutputFormat);
-    }
-  }
-
-  args.push(url);
-
-  return new Promise((resolve, reject) => {
-    const ytdlp = spawn('yt-dlp', args);
-    activeProcesses.set(jobId, ytdlp);
-    let logsTail = '';
-    let lastProgress = 0;
-    let lastProgressUpdate = 0;
-
-    let timedOut = false;
-
-    const processTimer = setTimeout(() => {
-      timedOut = true;
-      ytdlp.kill('SIGKILL');
-      finishWithError(jobId, 'Job timed out after 30 minutes');
-    }, MAX_PROCESS_TIME);
-
-    ytdlp.stdout.on('data', (data) => {
-      const text = data.toString();
-      logsTail = logsTail + text;
-      if (logsTail.length > 5000) {
-        logsTail = logsTail.slice(-5000);
-      }
-
-      const progressMatch = text.match(/(\d+\.?\d*)%/);
-      if (progressMatch) {
-        lastProgress = Math.round(parseFloat(progressMatch[1]));
-        if (Date.now() - lastProgressUpdate >= 500) {
-          updateProgress(jobId, lastProgress, logsTail);
-          lastProgressUpdate = Date.now();
-        }
-      }
-    });
-
-    ytdlp.stderr.on('data', (data) => {
-      logsTail = logsTail + data.toString();
-      if (logsTail.length > 5000) {
-        logsTail = logsTail.slice(-5000);
-      }
-    });
-
-    ytdlp.on('close', (code, signal) => {
-      clearTimeout(processTimer);
-      activeProcesses.delete(jobId);
-
-      if (signal === 'SIGKILL') {
-        if (!timedOut) {
-          finishWithError(jobId, 'Cancelled by user');
-        }
-        resolve();
-      } else if (code === 0) {
-        try {
-          const files = fs.readdirSync(outputDir).map(filename => {
-            const filePath = path.join(outputDir, filename);
-            const stat = fs.statSync(filePath);
-            return {
-              filename,
-              path: `downloads/${jobId}/${filename}`,
-              size: stat.size
-            };
-          });
-
-          updateProgress(jobId, 100, logsTail);
-          finishWithSuccess(jobId, { files }, isAdmin, job.sessionId);
-          resolve();
-        } catch (e) {
-          finishWithError(jobId, 'Failed to process output');
-          reject(e);
-        }
-      } else {
-        finishWithError(jobId, `yt-dlp exited with code ${code}: ${logsTail.slice(-1000)}`);
-        reject(new Error(`Process exited with code ${code}`));
-      }
-    });
-
-    ytdlp.on('error', (err) => {
-      clearTimeout(processTimer);
-      activeProcesses.delete(jobId);
-      finishWithError(jobId, `Failed to start yt-dlp: ${err.message}`);
-      reject(err);
-    });
-  });
-}
-
-async function processConvertJob(job) {
-  const input = JSON.parse(job.inputJson);
-  const { source, options, isAdmin } = input;
-  const jobId = job.id;
-
-  if (!checkDiskSpace(200)) {
-    finishWithError(jobId, 'Insufficient disk space on server');
-    return;
-  }
-
-  let inputPath;
-  if (source.type === 'upload') {
-    inputPath = safePath(DATA_DIR, source.path);
-  } else if (source.type === 'path') {
-    inputPath = safePath(DATA_DIR, source.path);
-  } else {
-    finishWithError(jobId, 'Invalid source type');
-    return;
-  }
-
-  if (!fs.existsSync(inputPath)) {
-    finishWithError(jobId, 'Input file not found');
-    return;
-  }
-
-  const outputDir = safePath(DATA_DIR, path.join('converted', String(jobId)));
-  fs.mkdirSync(outputDir, { recursive: true });
-
-  const outputExt = options.format;
-  const outputPath = path.join(outputDir, `output.${outputExt}`);
-  const inputDuration = getAudioDuration(inputPath);
-
-  const args = ['-i', inputPath];
-
-  if (options.trim) {
-    if (options.trim.startSec !== undefined) {
-      args.push('-ss', String(options.trim.startSec));
-    }
-    if (options.trim.endSec !== undefined) {
-      args.push('-to', String(options.trim.endSec));
-    }
-  }
-
-  if (options.normalize && options.normalize.enabled) {
-    const targetLufs = Number(options.normalize.targetLufs);
-    if (isNaN(targetLufs) || targetLufs < -70 || targetLufs > 0) {
-      finishWithError(jobId, 'Invalid normalization target');
-      return;
-    }
-    args.push('-af', `loudnorm=I=${targetLufs}:TP=-1.5:LRA=11`);
-  }
-
-  if (options.audioBitrate) {
-    args.push('-b:a', `${options.audioBitrate}k`);
-  }
-
-  args.push('-y', outputPath);
-
-  return new Promise((resolve, reject) => {
-    const ffmpeg = spawn('ffmpeg', args);
-    activeProcesses.set(jobId, ffmpeg);
-    let logsTail = '';
-    let lastProgressUpdate = 0;
-
-    let timedOut = false;
-
-    const processTimer = setTimeout(() => {
-      timedOut = true;
-      ffmpeg.kill('SIGKILL');
-      finishWithError(jobId, 'Job timed out after 30 minutes');
-    }, MAX_PROCESS_TIME);
-
-    ffmpeg.stderr.on('data', (data) => {
-      const text = data.toString();
-      logsTail = logsTail + text;
-      if (logsTail.length > 5000) {
-        logsTail = logsTail.slice(-5000);
-      }
-
-      if (inputDuration > 0) {
-        const timeMatch = text.match(/time=(\d+):(\d+):(\d+)\.(\d+)/);
-        if (timeMatch) {
-          const current = parseInt(timeMatch[1]) * 3600 + parseInt(timeMatch[2]) * 60 + parseInt(timeMatch[3]) + parseInt(timeMatch[4]) / 100;
-          const progress = Math.min(Math.round((current / inputDuration) * 100), 100);
-          if (Date.now() - lastProgressUpdate >= 500) {
-            updateProgress(jobId, progress, logsTail);
-            lastProgressUpdate = Date.now();
-          }
-        }
-      }
-    });
-
-    ffmpeg.on('close', (code, signal) => {
-      clearTimeout(processTimer);
-      activeProcesses.delete(jobId);
-
-      if (signal === 'SIGKILL') {
-        if (!timedOut) {
-          finishWithError(jobId, 'Cancelled by user');
-        }
-        resolve();
-      } else if (code === 0) {
-        try {
-          const stat = fs.statSync(outputPath);
-          updateProgress(jobId, 100, logsTail);
-          finishWithSuccess(jobId, {
-            files: [{
-              filename: `output.${outputExt}`,
-              path: `converted/${jobId}/output.${outputExt}`,
-              size: stat.size
-            }]
-          }, isAdmin, job.sessionId);
-          if (source.type === 'upload' && source.path) {
-            try {
-              const uploadPath = safePath(DATA_DIR, source.path);
-              if (fs.existsSync(uploadPath)) fs.unlinkSync(uploadPath);
-            } catch (e) { console.error('Failed to cleanup upload:', e.message); }
-          }
-          resolve();
-        } catch (e) {
-          finishWithError(jobId, 'Failed to process output');
-          reject(e);
-        }
-      } else {
-        finishWithError(jobId, `ffmpeg exited with code ${code}: ${logsTail.slice(-1000)}`);
-        reject(new Error(`Process exited with code ${code}`));
-      }
-    });
-
-    ffmpeg.on('error', (err) => {
-      clearTimeout(processTimer);
-      activeProcesses.delete(jobId);
-      finishWithError(jobId, `Failed to start ffmpeg: ${err.message}`);
-      reject(err);
-    });
-  });
-}
-
-async function processJob(job) {
-  if (job.type === 'download') {
-    return processDownloadJob(job);
-  } else if (job.type === 'convert') {
-    return processConvertJob(job);
-  } else {
-    throw new Error(`Unknown job type: ${job.type}`);
-  }
-}
+const processJob = createJobProcessor({
+  DATA_DIR,
+  MAX_PROCESS_TIME,
+  db,
+  activeProcesses,
+  safePath,
+  updateProgress,
+  finishWithSuccess,
+  finishWithError,
+  addSessionUsage,
+  createClip
+});
 
 let shuttingDown = false;
 let processing = false;
@@ -441,7 +200,7 @@ async function cleanupExpiredJobs() {
           if (fs.existsSync(jobDir)) {
             fs.rmSync(jobDir, { recursive: true, force: true });
           }
-        } catch (e) { }
+        } catch (e) {}
       }
     }
 
@@ -455,7 +214,7 @@ async function cleanupExpiredJobs() {
       if (fs.existsSync(dropPath)) {
         try {
           fs.unlinkSync(dropPath);
-        } catch (e) { }
+        } catch (e) {}
       }
     }
 
@@ -471,7 +230,7 @@ async function cleanupExpiredJobs() {
         try {
           const clipPath = safePath(DATA_DIR, clip.path);
           if (fs.existsSync(clipPath)) fs.unlinkSync(clipPath);
-        } catch (e) { }
+        } catch (e) {}
       }
     }
     if (expiredClips.length > 0) {
@@ -498,7 +257,7 @@ async function cleanupExpiredJobs() {
           if (fs.existsSync(jobDir)) {
             fs.rmSync(jobDir, { recursive: true, force: true });
           }
-        } catch (e) { }
+        } catch (e) {}
       }
     }
 
@@ -528,11 +287,28 @@ async function cleanupExpiredJobs() {
       }
     }
 
+    const referencedUploadPaths = new Set();
+    const referencedTempPaths = new Set();
+    for (const row of selectJobsWithInputs.all()) {
+      try {
+        const input = row.inputJson ? JSON.parse(row.inputJson) : null;
+        const sourcePath = input && input.source && input.source.path;
+        if (sourcePath && sourcePath.startsWith('uploads/')) {
+          referencedUploadPaths.add(path.normalize(sourcePath));
+        }
+        for (const file of input && input.files ? input.files : []) {
+          if (file.path && file.path.startsWith('uploads/')) {
+            referencedUploadPaths.add(path.normalize(file.path));
+          }
+        }
+        if (input && input.processingDir) {
+          referencedTempPaths.add(path.normalize(input.processingDir));
+        }
+      } catch (e) {}
+    }
+
     const uploadsDir = path.join(DATA_DIR, 'uploads');
     if (fs.existsSync(uploadsDir)) {
-      const knownJobIds = new Set(
-        db.prepare(`SELECT id FROM jobs WHERE deleted = 0`).all().map(r => r.id)
-      );
       for (const dateDir of fs.readdirSync(uploadsDir)) {
         const dateDirPath = path.join(uploadsDir, dateDir);
         if (!fs.statSync(dateDirPath).isDirectory()) continue;
@@ -548,7 +324,8 @@ async function cleanupExpiredJobs() {
           try {
             const stat = fs.statSync(entryPath);
             if (stat.isFile() && stat.mtimeMs < Date.now() - ORPHAN_THRESHOLD) {
-              const referenced = knownJobIds.has(entry.split('-')[0]);
+              const relativePath = path.normalize(path.relative(DATA_DIR, entryPath));
+              const referenced = referencedUploadPaths.has(relativePath);
               if (!referenced) {
                 fs.unlinkSync(entryPath);
                 console.log(`Removed orphaned upload file: ${dateDir}/${entry}`);
@@ -562,7 +339,7 @@ async function cleanupExpiredJobs() {
     const tempDirs = [
       path.join(DATA_DIR, 'uploads', 'gif-temp'),
       path.join(DATA_DIR, 'uploads', 'pdf-temp'),
-      path.join(DATA_DIR, 'clips-temp'),
+      path.join(DATA_DIR, 'clips-temp')
     ];
     const oneHourAgo = Date.now() - 60 * 60 * 1000;
     for (const tempDir of tempDirs) {
@@ -572,16 +349,21 @@ async function cleanupExpiredJobs() {
         try {
           const stat = fs.statSync(entryPath);
           if (stat.mtimeMs < oneHourAgo) {
+            const relativePath = path.normalize(path.relative(DATA_DIR, entryPath));
+            if (referencedUploadPaths.has(relativePath) || referencedTempPaths.has(relativePath)) continue;
             if (stat.isDirectory()) {
               fs.rmSync(entryPath, { recursive: true, force: true });
             } else {
               fs.unlinkSync(entryPath);
             }
           }
-        } catch (e) { }
+        } catch (e) {}
       }
     }
 
+    try {
+      db.pragma('wal_checkpoint(PASSIVE)');
+    } catch (e) {}
   } catch (err) {
     console.error('Cleanup error:', err);
   }
@@ -620,7 +402,7 @@ function gracefulShutdown() {
     try {
       proc.kill('SIGKILL');
       finishWithError(jobId, 'Worker shutting down');
-    } catch (e) { }
+    } catch (e) {}
   }
 
   setTimeout(() => {

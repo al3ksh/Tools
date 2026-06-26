@@ -1,23 +1,41 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Settings, Sun, Moon, Shield, X, Menu, Cookie, FileText, QrCode, Files, Sparkles, Film } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import Dashboard from './pages/Dashboard';
-import Downloader from './pages/Downloader';
-import Converter from './pages/Converter';
-import Shortener from './pages/Shortener';
-import Drop from './pages/Drop';
-import DropView from './pages/DropView';
-import AdminPanel from './pages/AdminPanel';
-import PrivacyPolicy from './pages/PrivacyPolicy';
-import QRCode from './pages/QRCode';
-import PDFEditor from './pages/PDFEditor';
-import GifMaker from './pages/GifMaker';
-import Clips from './pages/Clips';
-import ClipView from './pages/ClipView';
-import ClipEmbed from './pages/ClipEmbed';
-import NotFound from './pages/NotFound';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Downloader = lazy(() => import('./pages/Downloader'));
+const Converter = lazy(() => import('./pages/Converter'));
+const Shortener = lazy(() => import('./pages/Shortener'));
+const Drop = lazy(() => import('./pages/Drop'));
+const DropView = lazy(() => import('./pages/DropView'));
+const AdminPanel = lazy(() => import('./pages/AdminPanel'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const QRCode = lazy(() => import('./pages/QRCode'));
+const PDFEditor = lazy(() => import('./pages/PDFEditor'));
+const GifMaker = lazy(() => import('./pages/GifMaker'));
+const Clips = lazy(() => import('./pages/Clips'));
+const ClipView = lazy(() => import('./pages/ClipView'));
+const ClipEmbed = lazy(() => import('./pages/ClipEmbed'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+
+function RouteLoading() {
+  return (
+    <div className="content">
+      <div style={{
+        minHeight: '240px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--text-secondary)',
+        fontSize: '13px'
+      }}>
+        Loading...
+      </div>
+    </div>
+  );
+}
 
 function App() {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -281,23 +299,28 @@ function App() {
           </aside>
           <main className="main-content">
             <ErrorBoundary>
-              <Routes>
-              <Route path="/" element={<Dashboard sessionId={sessionId} isAdmin={isAdmin} />} />
-              <Route path="/downloader" element={<Downloader sessionId={sessionId} />} />
-              <Route path="/converter" element={<Converter sessionId={sessionId} isAdmin={isAdmin} />} />
-              <Route path="/shortener" element={<Shortener sessionId={sessionId} />} />
-              <Route path="/drop" element={<Drop sessionId={sessionId} isAdmin={isAdmin} />} />
-              <Route path="/qr" element={<QRCode />} />
-              <Route path="/pdf" element={<PDFEditor isAdmin={isAdmin} />} />
-              <Route path="/gif" element={<GifMaker isAdmin={isAdmin} />} />
-              <Route path="/clips" element={<Clips sessionId={sessionId} isAdmin={isAdmin} />} />
-              <Route path="/d/:token" element={<DropView />} />
-              <Route path="/c/:token/embed" element={<ClipEmbed />} />
-              <Route path="/c/:token" element={<ClipView isAdmin={isAdmin} />} />
-              {isAdmin && <Route path="/admin" element={<AdminPanel />} />}
-              <Route path="/privacy" element={<PrivacyPolicy />} />
-              <Route path="*" element={<NotFound />} />
-              </Routes>
+              <Suspense fallback={<RouteLoading />}>
+                <Routes>
+                <Route path="/" element={<Dashboard sessionId={sessionId} isAdmin={isAdmin} />} />
+                <Route path="/downloader" element={<Downloader sessionId={sessionId} />} />
+                <Route path="/download" element={<Downloader sessionId={sessionId} />} />
+                <Route path="/converter" element={<Converter sessionId={sessionId} isAdmin={isAdmin} />} />
+                <Route path="/shortener" element={<Shortener sessionId={sessionId} />} />
+                <Route path="/drop" element={<Drop sessionId={sessionId} isAdmin={isAdmin} />} />
+                <Route path="/qr" element={<QRCode />} />
+                <Route path="/qr-code" element={<QRCode />} />
+                <Route path="/qrcode" element={<QRCode />} />
+                <Route path="/pdf" element={<PDFEditor sessionId={sessionId} isAdmin={isAdmin} />} />
+                <Route path="/gif" element={<GifMaker sessionId={sessionId} isAdmin={isAdmin} />} />
+                <Route path="/clips" element={<Clips sessionId={sessionId} isAdmin={isAdmin} />} />
+                <Route path="/d/:token" element={<DropView />} />
+                <Route path="/c/:token/embed" element={<ClipEmbed />} />
+                <Route path="/c/:token" element={<ClipView isAdmin={isAdmin} />} />
+                {isAdmin && <Route path="/admin" element={<AdminPanel />} />}
+                <Route path="/privacy" element={<PrivacyPolicy />} />
+                <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Suspense>
             </ErrorBoundary>
           </main>
         </div>

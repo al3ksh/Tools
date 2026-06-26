@@ -592,6 +592,91 @@ td:last-child {
   text-align: right;
 }
 
+.job-progress {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.job-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.job-progress-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.job-progress-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-progress-meta {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.job-progress-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+}
+
+.job-progress-fill {
+  height: 100%;
+  min-width: 4px;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+.job-progress.status-done .job-progress-fill {
+  background: var(--success);
+}
+
+.job-progress.status-failed .job-progress-fill {
+  background: var(--error);
+}
+
+.job-progress-message {
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-progress-compact {
+  margin-top: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.job-progress-compact .job-progress-header {
+  margin-bottom: 5px;
+}
+
+.job-progress-compact .job-progress-bar {
+  height: 6px;
+}
+
 /* Upload zone */
 .upload-zone {
   border: 2px dashed var(--border);

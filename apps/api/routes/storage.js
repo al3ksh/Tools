@@ -4,6 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const { db, DATA_DIR } = require('../db/database');
 
+const ADMIN_CACHE_MS = 15000;
+let adminCache = null;
+let adminCacheAt = 0;
+
 function formatBytes(bytes) {
   if (bytes <= 0) return '0 B';
   const k = 1024;
@@ -50,6 +54,21 @@ function getDirectorySize(dirPath) {
     }
   }
   return size;
+}
+
+function getDatabaseFiles() {
+  const dbPath = path.join(DATA_DIR, 'tools.db');
+  const files = {};
+  for (const name of ['tools.db', 'tools.db-wal', 'tools.db-shm']) {
+    const filePath = path.join(DATA_DIR, name);
+    const size = fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
+    files[name] = { bytes: size, formatted: formatBytes(size) };
+  }
+  return {
+    files,
+    walBytes: files['tools.db-wal'].bytes,
+    dbBytes: fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0
+  };
 }
 
 function getSessionBreakdown(sessionId) {
@@ -106,6 +125,10 @@ function getSessionBreakdown(sessionId) {
 router.get('/', (req, res) => {
   try {
     if (req.isAdmin) {
+      if (adminCache && Date.now() - adminCacheAt < ADMIN_CACHE_MS) {
+        return res.json(adminCache);
+      }
+
       const dirs = ['downloads', 'converted', 'uploads', 'drops', 'clips'];
       const directories = {};
       let total = 0;
@@ -127,6 +150,9 @@ router.get('/', (req, res) => {
         response.disk = disk;
       }
 
+      response.database = getDatabaseFiles();
+      adminCache = response;
+      adminCacheAt = Date.now();
       return res.json(response);
     }
 
