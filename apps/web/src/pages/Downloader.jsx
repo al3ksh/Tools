@@ -4,6 +4,7 @@ import { Download, Film, Clock, List, CheckCircle, XCircle, Trash2, ClipboardLis
 import StatusBadge from '../components/StatusBadge';
 import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
+import JobProgress from '../components/JobProgress';
 import useToast from '../hooks/useToast';
 import useConfirm from '../hooks/useConfirm';
 
@@ -358,11 +359,12 @@ function Downloader({ sessionId }) {
                           <StatusBadge status={job.status} />
                         </td>
                         <td>
-                          <div className="progress-wrapper">
-                            <div className="progress-bar">
-                              <div className="progress-fill" style={{ width: `${job.status === 'done' ? 100 : (job.status === 'running' || job.status === 'queued') ? Math.min(job.progress || 0, 90) : (job.progress || 0)}%` }} />
-                            </div>
-                          </div>
+                          <JobProgress
+                            job={job}
+                            title={job.status === 'done' ? 'Completed' : 'Download'}
+                            fallbackMessage="Worker is downloading media"
+                            compact
+                          />
                         </td>
                         <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
                           {formatDate(job.createdAt)}
