@@ -75,6 +75,22 @@ function createJobProcessor(context) {
     return `${safeName}_${suffix}.${ext}`;
   }
 
+  function getDownloadedFiles(outputDir) {
+    return fs.readdirSync(outputDir)
+      .map(filename => {
+        const filePath = path.join(outputDir, filename);
+        const stat = fs.statSync(filePath);
+        return { filename, filePath, size: stat.size };
+      })
+      .filter(file => file.size > 0);
+  }
+
+  function getPrimaryDownloadedFile(outputDir) {
+    const files = getDownloadedFiles(outputDir);
+    files.sort((a, b) => b.size - a.size);
+    return files[0] || null;
+  }
+
   function parseChunkName(filename) {
     const match = filename.match(/^(\d+)-(\d+)\.chunk$/);
     if (!match) return null;
@@ -173,9 +189,104 @@ function createJobProcessor(context) {
     });
   }
 
+  function runGifEncode(jobId, inputPath, outputPath, options, progressBase, progressSpan) {
+    const { start, duration, width, fps, maxColors } = options;
+    const filter = `${buildGifFilterChain({ fps, width, speed: 1, reverse: false })},split[s0][s1];[s0]palettegen=max_colors=${maxColors}[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5`;
+    const args = ['-y'];
+    if (start > 0) args.push('-ss', String(start));
+    args.push('-t', String(duration), '-i', inputPath, '-filter_complex', filter, '-loop', '0', outputPath);
+
+    return new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', args);
+      activeProcesses.set(jobId, ffmpeg);
+      let logsTail = '';
+      let lastProgressUpdate = 0;
+      let timedOut = false;
+
+      const processTimer = setTimeout(() => {
+        timedOut = true;
+        ffmpeg.kill('SIGKILL');
+      }, MAX_PROCESS_TIME);
+
+      ffmpeg.stderr.on('data', (data) => {
+        const text = data.toString();
+        logsTail += text;
+        if (logsTail.length > 5000) logsTail = logsTail.slice(-5000);
+        const current = parseFfmpegTime(text);
+        if (duration > 0 && current != null && Date.now() - lastProgressUpdate >= 500) {
+          const progress = progressBase + Math.min(Math.round((current / duration) * progressSpan), progressSpan);
+          updateProgress(jobId, Math.min(progress, 98), logsTail);
+          lastProgressUpdate = Date.now();
+        }
+      });
+
+      ffmpeg.on('close', (code, signal) => {
+        clearTimeout(processTimer);
+        activeProcesses.delete(jobId);
+        if (signal === 'SIGKILL') {
+          reject(new Error(timedOut ? 'GIF encoding timed out' : 'Cancelled by user'));
+        } else if (code === 0 && fs.existsSync(outputPath)) {
+          resolve(logsTail);
+        } else {
+          reject(new Error(`ffmpeg exited with code ${code}: ${logsTail.slice(-1000)}`));
+        }
+      });
+
+      ffmpeg.on('error', (err) => {
+        clearTimeout(processTimer);
+        activeProcesses.delete(jobId);
+        reject(err);
+      });
+    });
+  }
+
+  async function convertDownloadToGif(jobId, inputPath, outputDir, presetConfig, gifOptions) {
+    const duration = Math.min(Math.max(Number(gifOptions.duration) || presetConfig.defaultDuration || 8, 1), presetConfig.maxDuration || 20);
+    const start = Math.max(0, Number(gifOptions.start) || 0);
+    const targetBytes = Math.min(Math.max(Number(gifOptions.targetMB) || presetConfig.defaultTargetMB || 8, 1), presetConfig.maxTargetMB || 25) * 1024 * 1024;
+    let width = Math.min(Math.max(Number(gifOptions.width) || presetConfig.defaultWidth || 480, 160), presetConfig.maxWidth || 720);
+    let fps = Math.min(Math.max(Number(gifOptions.fps) || presetConfig.defaultFps || 10, 5), presetConfig.maxFps || 15);
+    const outputFilename = getOutputBaseName(path.basename(inputPath), 'download', 'gif');
+    const outputPath = path.join(outputDir, outputFilename);
+    let finalSize = 0;
+    let attempts = 0;
+
+    while (attempts < 3) {
+      attempts += 1;
+      try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (e) {}
+      updateProgress(jobId, 60 + attempts * 5, `Encoding GIF attempt ${attempts}`);
+      await runGifEncode(jobId, inputPath, outputPath, {
+        start: 0,
+        duration,
+        width,
+        fps,
+        maxColors: attempts === 1 ? 128 : 96
+      }, 60, 35);
+
+      finalSize = fs.statSync(outputPath).size;
+      if (finalSize <= targetBytes || width <= 240 || fps <= 6) break;
+      width = Math.max(240, Math.round(width * 0.78));
+      fps = Math.max(6, fps - 2);
+    }
+
+    return {
+      filename: outputFilename,
+      path: `downloads/${jobId}/${outputFilename}`,
+      size: finalSize,
+      targetBytes,
+      overTarget: finalSize > targetBytes,
+      width,
+      fps,
+      duration,
+      start,
+      attempts,
+      outputPath
+    };
+  }
+
   async function processDownloadJob(job) {
     const input = JSON.parse(job.inputJson);
-    const { url, presetConfig, isAdmin } = input;
+    const { url, presetConfig, gifOptions = {}, isAdmin } = input;
     const jobId = job.id;
 
     if (!checkDiskSpace(500)) {
@@ -205,6 +316,12 @@ function createJobProcessor(context) {
       if (presetConfig.mergeOutputFormat) {
         args.push('--merge-output-format', presetConfig.mergeOutputFormat);
       }
+      if (presetConfig.asGif) {
+        const start = Math.max(0, Number(gifOptions.start) || 0);
+        const duration = Math.min(Math.max(Number(gifOptions.duration) || presetConfig.defaultDuration || 8, 1), presetConfig.maxDuration || 20);
+        args.push('--download-sections', `*${start}-${start + duration}`);
+        args.push('--force-keyframes-at-cuts');
+      }
     }
 
     args.push(url);
@@ -231,7 +348,9 @@ function createJobProcessor(context) {
 
         const progressMatch = text.match(/(\d+\.?\d*)%/);
         if (progressMatch && Date.now() - lastProgressUpdate >= 500) {
-          updateProgress(jobId, Math.round(parseFloat(progressMatch[1])), logsTail);
+          const rawProgress = Math.round(parseFloat(progressMatch[1]));
+          const progress = presetConfig.asGif ? Math.min(Math.round(rawProgress * 0.58), 58) : rawProgress;
+          updateProgress(jobId, progress, logsTail);
           lastProgressUpdate = Date.now();
         }
       });
@@ -243,7 +362,7 @@ function createJobProcessor(context) {
         }
       });
 
-      ytdlp.on('close', (code, signal) => {
+      ytdlp.on('close', async (code, signal) => {
         clearTimeout(processTimer);
         activeProcesses.delete(jobId);
 
@@ -255,21 +374,32 @@ function createJobProcessor(context) {
           resolve();
         } else if (code === 0) {
           try {
-            const files = fs.readdirSync(outputDir).map(filename => {
-              const filePath = path.join(outputDir, filename);
-              const stat = fs.statSync(filePath);
-              return {
-                filename,
-                path: `downloads/${jobId}/${filename}`,
-                size: stat.size
-              };
-            });
+            let files;
+            let gifMeta = null;
+
+            if (presetConfig.asGif) {
+              const source = getPrimaryDownloadedFile(outputDir);
+              if (!source) throw new Error('No downloaded media found');
+              gifMeta = await convertDownloadToGif(jobId, source.filePath, outputDir, presetConfig, gifOptions);
+              for (const file of getDownloadedFiles(outputDir)) {
+                if (file.filePath !== gifMeta.outputPath) {
+                  try { fs.unlinkSync(file.filePath); } catch (e) {}
+                }
+              }
+            }
+
+            files = getDownloadedFiles(outputDir).map(file => ({
+              filename: file.filename,
+              path: `downloads/${jobId}/${file.filename}`,
+              size: file.size
+            }));
 
             updateProgress(jobId, 100, logsTail);
-            finishWithSuccess(jobId, { files }, isAdmin, job.sessionId);
+            finishWithSuccess(jobId, { files, gif: gifMeta }, isAdmin, job.sessionId);
             resolve();
           } catch (e) {
-            finishWithError(jobId, 'Failed to process output');
+            try { fs.rmSync(outputDir, { recursive: true, force: true }); } catch (cleanupErr) {}
+            finishWithError(jobId, e.message === 'Cancelled by user' ? 'Cancelled by user' : 'Failed to process output');
             reject(e);
           }
         } else {

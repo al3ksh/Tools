@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { api, formatDate, getFileUrl, PRESETS } from '../api';
+import { api, formatBytes, formatDate, getFileUrl, PRESETS } from '../api';
 import { Download, Film, Clock, List, CheckCircle, XCircle, Trash2, ClipboardList, Inbox, XSquare, Link as LinkIcon, Youtube, ImageOff } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import EmptyState from '../components/EmptyState';
@@ -10,6 +10,11 @@ import useConfirm from '../hooks/useConfirm';
 function Downloader({ sessionId }) {
   const [url, setUrl] = useState('');
   const [preset, setPreset] = useState('VIDEO_MP4_BEST');
+  const [gifStart, setGifStart] = useState('0');
+  const [gifDuration, setGifDuration] = useState('8');
+  const [gifFps, setGifFps] = useState('10');
+  const [gifWidth, setGifWidth] = useState('480');
+  const [gifTargetMB, setGifTargetMB] = useState('8');
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -21,6 +26,7 @@ function Downloader({ sessionId }) {
 
   const [myJobsPage, setMyJobsPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
+  const isGifPreset = preset === 'VIDEO_GIF_SOCIAL';
 
   // Set image loaded back to false when url changes
   useEffect(() => {
@@ -95,7 +101,13 @@ function Downloader({ sessionId }) {
     setError('');
 
     try {
-      await api.createDownloadJob(url, preset, sessionId);
+      await api.createDownloadJob(url, preset, sessionId, isGifPreset ? {
+        gifStart,
+        gifDuration,
+        gifFps,
+        gifWidth,
+        gifTargetMB
+      } : {});
       setUrl('');
       showToast('Job added to queue!');
       fetchJobs();
@@ -173,6 +185,36 @@ function Downloader({ sessionId }) {
                     </select>
                   </div>
                 </div>
+
+                {isGifPreset && (
+                  <>
+                    <div style={{ marginBottom: '12px', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: '8px', background: 'var(--bg)', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                      GIF download is capped for server stability. Shorter duration, lower FPS and smaller width are the biggest size wins.
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px' }}>
+                      <div className="form-group">
+                        <label className="form-label">Start Sec</label>
+                        <input className="form-input" type="number" min="0" step="0.5" value={gifStart} onChange={(e) => setGifStart(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Duration</label>
+                        <input className="form-input" type="number" min="1" max="20" step="1" value={gifDuration} onChange={(e) => setGifDuration(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">FPS</label>
+                        <input className="form-input" type="number" min="5" max="15" step="1" value={gifFps} onChange={(e) => setGifFps(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Width</label>
+                        <input className="form-input" type="number" min="160" max="720" step="20" value={gifWidth} onChange={(e) => setGifWidth(e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Target MB</label>
+                        <input className="form-input" type="number" min="1" max="25" step="1" value={gifTargetMB} onChange={(e) => setGifTargetMB(e.target.value)} />
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 {error && (
                   <div style={{ color: 'var(--error)', marginBottom: '15px', padding: '10px', background: 'rgba(231, 76, 60, 0.1)', borderRadius: '6px' }}>
@@ -291,6 +333,8 @@ function Downloader({ sessionId }) {
                 <tbody>
                   {jobs.slice((myJobsPage - 1) * ITEMS_PER_PAGE, myJobsPage * ITEMS_PER_PAGE).map(job => {
                     const input = job.inputJson || {};
+                    const fileInfo = job.outputJson?.files?.[0];
+                    const gifInfo = job.outputJson?.gif;
                     const shortUrl = (() => { try { return input.url ? new URL(input.url).hostname : '-'; } catch { return '-'; } })();
                     return (
                       <tr key={job.id}>
@@ -303,6 +347,12 @@ function Downloader({ sessionId }) {
                           <span style={{ fontSize: '12px', opacity: 0.8 }}>
                             {input.preset?.replace('_', ' ')}
                           </span>
+                          {fileInfo && (
+                            <div style={{ marginTop: '3px', fontSize: '12px', color: gifInfo?.overTarget ? 'var(--warning)' : 'var(--text-secondary)' }}>
+                              {formatBytes(fileInfo.size)}
+                              {gifInfo?.targetBytes ? ` / target ${formatBytes(gifInfo.targetBytes)}` : ''}
+                            </div>
+                          )}
                         </td>
                         <td>
                           <StatusBadge status={job.status} />

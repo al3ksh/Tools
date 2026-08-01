@@ -123,9 +123,9 @@ export const api = {
   cancelJob: (id, sessionId) => fetchApi(`/jobs/${id}/cancel${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`, { method: 'POST' }),
 
   // Downloader
-  createDownloadJob: (url, preset, sessionId) => fetchApi('/downloader', {
+  createDownloadJob: (url, preset, sessionId, options = {}) => fetchApi('/downloader', {
     method: 'POST',
-    body: JSON.stringify({ url, preset, sessionId }),
+    body: JSON.stringify({ url, preset, sessionId, ...options }),
   }),
 
   // Converter
@@ -496,6 +496,7 @@ export const PRESETS = [
   { value: 'VIDEO_MP4_BEST', label: 'Video MP4 - Best Quality' },
   { value: 'VIDEO_MP4_720P', label: 'Video MP4 - 720p' },
   { value: 'VIDEO_MP4_DISCORD', label: 'Video MP4 - Discord (<8MB)' },
+  { value: 'VIDEO_GIF_SOCIAL', label: 'GIF - Social clip' },
   { value: 'AUDIO_FLAC_BEST', label: 'Audio FLAC - Lossless' },
   { value: 'AUDIO_WAV_BEST', label: 'Audio WAV - Lossless' },
   { value: 'AUDIO_MP3_320', label: 'Audio MP3 - 320kbps' },

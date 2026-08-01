@@ -15,6 +15,20 @@ const PRESETS = {
     mergeOutputFormat: 'mp4',
     extractAudio: false
   },
+  VIDEO_GIF_SOCIAL: {
+    format: 'bestvideo[height<=720]+bestaudio/best[height<=720]/best[height<=720]',
+    mergeOutputFormat: 'mp4',
+    extractAudio: false,
+    asGif: true,
+    defaultDuration: 8,
+    maxDuration: 20,
+    defaultFps: 10,
+    maxFps: 15,
+    defaultWidth: 480,
+    maxWidth: 720,
+    defaultTargetMB: 8,
+    maxTargetMB: 25
+  },
   AUDIO_MP3_320: {
     format: 'bestaudio/best',
     mergeOutputFormat: null,
