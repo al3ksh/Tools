@@ -209,7 +209,7 @@ function Clips({ sessionId, isAdmin }) {
       setUploadPhase('uploading');
       setUploadProgress(0);
 
-      const uploadId = await uploadChunks(file, (progress) => setUploadProgress(progress));
+      const uploadId = await uploadChunks(file, (progress) => setUploadProgress(progress.percent));
 
       setUploadPhase('processing');
       setUploadProgress(null);

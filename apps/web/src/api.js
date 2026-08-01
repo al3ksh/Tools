@@ -371,6 +371,9 @@ export const getClipStreamUrl = (token) => `/api/clip/${token}/stream`;
 export const getClipEmbedUrl = (token) => `/c/${token}/embed`;
 
 const CHUNK_SIZE = 5 * 1024 * 1024;
+const MAX_CHUNK_RETRIES = 3;
+
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export async function uploadChunks(file, onProgress) {
   const uploadId = crypto.randomUUID();
@@ -383,19 +386,35 @@ export async function uploadChunks(file, onProgress) {
     const end = Math.min(start + CHUNK_SIZE - 1, file.size - 1);
     const blob = file.slice(start, end + 1);
 
-    const response = await fetch(`${API_BASE}/clip/upload-chunk`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'X-Upload-Id': uploadId,
-        'Content-Range': `bytes ${start}-${end}/${file.size}`,
-      },
-      body: blob,
-    });
+    for (let attempt = 0; attempt <= MAX_CHUNK_RETRIES; attempt++) {
+      let response;
+      try {
+        response = await fetch(`${API_BASE}/clip/upload-chunk`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'X-Upload-Id': uploadId,
+            'Content-Range': `bytes ${start}-${end}/${file.size}`,
+          },
+          body: blob,
+        });
+      } catch (error) {
+        if (attempt === MAX_CHUNK_RETRIES) {
+          throw new Error('Upload interrupted. Check your connection and try again.');
+        }
+        await delay(500 * 2 ** attempt);
+        continue;
+      }
 
-    if (!response.ok) {
+      if (response.ok) break;
+
       const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-      throw new Error(error.error || 'Upload failed');
+      const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+      if (!retryable || attempt === MAX_CHUNK_RETRIES) {
+        throw new Error(error.error || 'Upload failed');
+      }
+
+      await delay(500 * 2 ** attempt);
     }
 
     uploadedChunks++;
