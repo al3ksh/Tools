@@ -1011,15 +1011,27 @@ function createJobProcessor(context) {
       if (maxWidth > 0) {
         filters.push(`scale=w='min(${maxWidth},iw)':h=-2`);
       }
-      if (filters.length > 0) args.push('-vf', filters.join(','));
 
-      if (format === 'webm') {
+      if (format === 'gif') {
+        filters.push('fps=10');
+        const filter = `${filters.join(',')},split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5`;
+        args.push('-filter_complex', filter, '-loop', '0');
+        if (targetMB > 1) args.push('-fs', String(Math.floor(targetMB * 1024 * 1024)));
+      } else {
+        if (filters.length > 0) args.push('-vf', filters.join(','));
+      }
+
+      if (format === 'gif') {
+        args.push('-an');
+      } else if (format === 'webm') {
         args.push('-c:v', 'libvpx-vp9');
       } else {
         args.push('-c:v', 'libx264', '-preset', 'veryfast', '-movflags', '+faststart');
       }
 
-      if (targetMB > 0 && inputDuration > 0) {
+      if (format === 'gif') {
+        // GIF size is controlled mostly by duration, width, fps and palette. Bitrate flags do not apply.
+      } else if (targetMB > 0 && inputDuration > 0) {
         const totalKbps = Math.max(Math.floor((targetMB * 8192) / inputDuration), 160);
         const audioKbps = options.stripAudio ? 0 : Math.min(128, Math.max(64, Math.floor(totalKbps * 0.18)));
         const videoKbps = Math.max(totalKbps - audioKbps, 120);
@@ -1049,6 +1061,8 @@ function createJobProcessor(context) {
       } else if (format === 'jpg' || format === 'jpeg') {
         const q = Math.round(31 - (quality / 100) * 26);
         args.push('-q:v', String(Math.min(Math.max(q, 2), 31)));
+      } else if (format === 'gif') {
+        // Static image to GIF does not need a video codec.
       } else {
         args.push('-c:v', 'libwebp', '-quality', String(quality), '-compression_level', '6');
       }

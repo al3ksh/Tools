@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api, formatBytes, formatDate, getFileUrl } from '../api';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, FolderOpen, Clock, CheckCircle, XCircle, Zap, Download, FileAudio, Link as LinkIcon, Database, ClipboardList, Settings, Inbox, Archive, PackageOpen } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, FolderOpen, Clock, CheckCircle, XCircle, Zap, Download, FileAudio, Link as LinkIcon, Database, ClipboardList, Settings, Inbox, Archive, PackageOpen, Film } from 'lucide-react';
 import JobProgress from '../components/JobProgress';
 import Pagination from '../components/Pagination';
 
@@ -136,20 +136,15 @@ function Dashboard({ sessionId, isAdmin }) {
                 <div className="quick-action-title">Convert Audio</div>
                 <div className="quick-action-desc">MP3, WAV, FLAC, Opus with normalization</div>
               </Link>
-              <Link to="/compress" className="quick-action">
-                <div className="quick-action-icon"><PackageOpen size={36} /></div>
-                <div className="quick-action-title">Compress Media</div>
-                <div className="quick-action-desc">Shrink videos and images for social upload limits</div>
-              </Link>
-              <Link to="/shortener" className="quick-action">
-                <div className="quick-action-icon"><LinkIcon size={36} /></div>
-                <div className="quick-action-title">Shorten Link</div>
-                <div className="quick-action-desc">Create short URLs with click tracking</div>
-              </Link>
               <Link to="/drop" className="quick-action">
                 <div className="quick-action-icon"><FolderOpen size={36} /></div>
                 <div className="quick-action-title">Share File</div>
                 <div className="quick-action-desc">Upload and share files up to 50MB</div>
+              </Link>
+              <Link to="/clips" className="quick-action">
+                <div className="quick-action-icon"><Film size={36} /></div>
+                <div className="quick-action-title">Clips</div>
+                <div className="quick-action-desc">Upload, trim, and share video clips</div>
               </Link>
             </div>
           </div>

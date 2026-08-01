@@ -11,6 +11,7 @@ import useConfirm from '../hooks/useConfirm';
 
 function getKind(file) {
   if (!file) return 'video';
+  if (file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif')) return 'video';
   if (file.type.startsWith('image/')) return 'image';
   return 'video';
 }
@@ -22,6 +23,7 @@ function getOutputName(file, format) {
 
 function Compressor({ sessionId, isAdmin }) {
   const [file, setFile] = useState(null);
+  const [mediaKind, setMediaKind] = useState('video');
   const [mode, setMode] = useState('target');
   const [targetMB, setTargetMB] = useState('8');
   const [quality, setQuality] = useState('70');
@@ -38,7 +40,7 @@ function Compressor({ sessionId, isAdmin }) {
   const [confirm, ConfirmDialog] = useConfirm();
   const ITEMS_PER_PAGE = 10;
 
-  const kind = getKind(file);
+  const kind = file ? getKind(file) : mediaKind;
   const estimatedTarget = useMemo(() => {
     if (!file) return null;
     if (mode === 'target') return Number(targetMB) > 0 ? Number(targetMB) * 1024 * 1024 : null;
@@ -46,8 +48,8 @@ function Compressor({ sessionId, isAdmin }) {
   }, [file, mode, targetMB, quality]);
 
   useEffect(() => {
-    if (kind === 'image' && !['jpg', 'png', 'webp'].includes(format)) setFormat('webp');
-    if (kind === 'video' && !['mp4', 'webm'].includes(format)) setFormat('mp4');
+    if (kind === 'image' && !['jpg', 'png', 'webp', 'gif'].includes(format)) setFormat('webp');
+    if (kind === 'video' && !['mp4', 'webm', 'gif'].includes(format)) setFormat('mp4');
   }, [kind, format]);
 
   async function fetchJobs() {
@@ -72,6 +74,7 @@ function Compressor({ sessionId, isAdmin }) {
     setCurrentJob(null);
     if (nextFile) {
       const nextKind = getKind(nextFile);
+      setMediaKind(nextKind);
       setFormat(nextKind === 'image' ? 'webp' : 'mp4');
       setMaxWidth(nextKind === 'image' ? '1920' : '1280');
     }
@@ -167,6 +170,16 @@ function Compressor({ sessionId, isAdmin }) {
                 </div>
               )}
 
+              {!file && (
+                <div className="form-group">
+                  <label className="form-label">Media Type</label>
+                  <select className="form-input" value={mediaKind} onChange={(e) => setMediaKind(e.target.value)}>
+                    <option value="video">Video / GIF</option>
+                    <option value="image">Image</option>
+                  </select>
+                </div>
+              )}
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
                 <div className="form-group">
                   <label className="form-label">Mode</label>
@@ -197,20 +210,22 @@ function Compressor({ sessionId, isAdmin }) {
                       <>
                         <option value="mp4">MP4</option>
                         <option value="webm">WebM</option>
+                        <option value="gif">GIF</option>
                       </>
                     ) : (
                       <>
                         <option value="webp">WebP</option>
                         <option value="jpg">JPG</option>
                         <option value="png">PNG</option>
+                        <option value="gif">GIF</option>
                       </>
                     )}
                   </select>
                 </div>
               </div>
 
-              {kind === 'video' && (
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px', marginBottom: '12px', cursor: 'pointer' }}>
+              {kind === 'video' && format !== 'gif' && (
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px', marginBottom: '14px', cursor: 'pointer' }}>
                   <input type="checkbox" checked={stripAudio} onChange={(e) => setStripAudio(e.target.checked)} />
                   Remove audio for smaller output
                 </label>
@@ -224,9 +239,11 @@ function Compressor({ sessionId, isAdmin }) {
 
               <JobProgress job={currentJob} title="Compressing file" fallbackMessage="Worker is compressing media" />
 
-              <button type="submit" className="btn btn-primary" disabled={!file || processing}>
-                {processing ? <><Clock size={16} /> Compressing...</> : <><PackageOpen size={16} /> Compress & Download</>}
-              </button>
+              <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: '4px' }}>
+                <button type="submit" className="btn btn-primary" disabled={!file || processing} style={{ minWidth: '210px', justifyContent: 'center' }}>
+                  {processing ? <><Clock size={16} /> Compressing...</> : <><PackageOpen size={16} /> Compress & Download</>}
+                </button>
+              </div>
             </form>
           </div>
         </div>

@@ -414,12 +414,11 @@ function Clips({ sessionId, isAdmin }) {
                         ref={timelineRef}
                         style={{
                           position: 'relative',
-                          height: '42px',
+                          height: '56px',
                           borderRadius: '6px',
                           background: 'var(--bg-secondary)',
                           overflow: 'hidden',
-                          cursor: 'pointer',
-                          marginBottom: '10px'
+                          cursor: 'pointer'
                         }}
                         onMouseDown={(e) => beginTimelineDrag('seek', e)}
                         onTouchStart={(e) => beginTimelineDrag('seek', e)}
@@ -434,6 +433,23 @@ function Clips({ sessionId, isAdmin }) {
                           borderLeft: '2px solid var(--accent)',
                           borderRight: '2px solid var(--accent)'
                         }} />
+                        <div style={{
+                          position: 'absolute',
+                          top: '50%',
+                          left: `${trimStartPct + Math.max((trimEndPct - trimStartPct) / 2, 0)}%`,
+                          transform: 'translate(-50%, -50%)',
+                          padding: '3px 8px',
+                          borderRadius: '4px',
+                          background: 'rgba(0,0,0,0.55)',
+                          color: '#fff',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          pointerEvents: 'none',
+                          whiteSpace: 'nowrap',
+                          zIndex: 1
+                        }}>
+                          {formatTime(trimDuration)}
+                        </div>
                         <button
                           type="button"
                           onMouseDown={(e) => beginTimelineDrag('start', e)}
@@ -444,15 +460,20 @@ function Clips({ sessionId, isAdmin }) {
                             top: 0,
                             bottom: 0,
                             left: `${trimStartPct}%`,
-                            width: '18px',
-                            marginLeft: '-9px',
+                            width: '26px',
+                            marginLeft: '-13px',
                             border: 'none',
                             borderRadius: '3px',
                             background: 'var(--accent)',
                             cursor: 'ew-resize',
-                            zIndex: 2
+                            zIndex: 2,
+                            color: '#fff',
+                            fontSize: '10px',
+                            fontWeight: 700
                           }}
-                        />
+                        >
+                          S
+                        </button>
                         <button
                           type="button"
                           onMouseDown={(e) => beginTimelineDrag('end', e)}
@@ -463,15 +484,20 @@ function Clips({ sessionId, isAdmin }) {
                             top: 0,
                             bottom: 0,
                             left: `${trimEndPct}%`,
-                            width: '18px',
-                            marginLeft: '-9px',
+                            width: '26px',
+                            marginLeft: '-13px',
                             border: 'none',
                             borderRadius: '3px',
                             background: 'var(--accent)',
                             cursor: 'ew-resize',
-                            zIndex: 2
+                            zIndex: 2,
+                            color: '#fff',
+                            fontSize: '10px',
+                            fontWeight: 700
                           }}
-                        />
+                        >
+                          E
+                        </button>
                         <div style={{
                           position: 'absolute',
                           top: 0,
@@ -484,38 +510,9 @@ function Clips({ sessionId, isAdmin }) {
                           zIndex: 3
                         }} />
                       </div>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' }}>
-                            <span>Start</span>
-                            <strong style={{ color: 'var(--text-primary)' }}>{formatTime(trimStart)}</strong>
-                          </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={duration}
-                            step={0.05}
-                            value={trimStart}
-                            onChange={(e) => syncTrimStart(parseFloat(e.target.value))}
-                            style={{ width: '100%' }}
-                          />
-                        </div>
-                        <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' }}>
-                            <span>End</span>
-                            <strong style={{ color: 'var(--text-primary)' }}>{formatTime(safeTrimEnd)}</strong>
-                          </div>
-                          <input
-                            type="range"
-                            min={0}
-                            max={duration}
-                            step={0.05}
-                            value={safeTrimEnd}
-                            onChange={(e) => syncTrimEnd(parseFloat(e.target.value))}
-                            style={{ width: '100%' }}
-                          />
-                        </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '6px' }}>
+                        <span>Start {formatTime(trimStart)}</span>
+                        <span>End {formatTime(safeTrimEnd)}</span>
                       </div>
                     </div>
                   )}
@@ -600,9 +597,7 @@ function Clips({ sessionId, isAdmin }) {
                       border: '1px solid rgba(52, 152, 219, 0.2)'
                     }}>
                       <Video size={12} style={{ marginRight: '4px' }} />
-                      Trimmed: {formatTime(trimDuration)} ({Math.round(trimDuration / duration * 100)}% of original)
-                      {' — '}
-                      <span style={{ color: 'var(--accent-text)', fontWeight: 500 }}>ffmpeg trim</span>
+                      Trimmed: {formatTime(trimDuration)} ({Math.round(trimDuration / duration * 100)}% of original), ffmpeg trim
                     </div>
                   )}
                 </div>

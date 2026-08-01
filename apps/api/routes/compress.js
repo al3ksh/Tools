@@ -35,17 +35,18 @@ function cleanupFile(filePath) {
 function getFileKind(file) {
   const ext = path.extname(file.originalname || '').toLowerCase();
   const mime = file.mimetype || '';
+  if (mime === 'image/gif' || ext === '.gif') return 'video';
   if (mime.startsWith('video/') || ['.mp4', '.webm', '.mov', '.mkv', '.avi'].includes(ext)) return 'video';
-  if (mime.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif'].includes(ext)) return 'image';
+  if (mime.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif', '.gif'].includes(ext)) return 'image';
   return null;
 }
 
 function getOutputFormat(kind, requested) {
   if (kind === 'video') {
-    if (['mp4', 'webm'].includes(requested)) return requested;
+    if (['mp4', 'webm', 'gif'].includes(requested)) return requested;
     return 'mp4';
   }
-  if (['jpg', 'jpeg', 'png', 'webp'].includes(requested)) return requested === 'jpeg' ? 'jpg' : requested;
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(requested)) return requested === 'jpeg' ? 'jpg' : requested;
   return 'webp';
 }
 
