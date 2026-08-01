@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Film, Upload, Play, Pause, SkipBack, SkipForward, Copy, Trash2, Clock, CheckCircle, XCircle, Scissors, Video, Loader, Eye, ExternalLink } from 'lucide-react';
+import { Film, Upload, Play, Pause, Copy, Trash2, Clock, CheckCircle, XCircle, Scissors, Video, Loader, Eye, ExternalLink } from 'lucide-react';
 import { api, formatBytes, formatDate, getClipUrl, getClipStreamUrl, uploadChunks, finalizeUpload } from '../api';
 import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
@@ -73,6 +73,24 @@ function Clips({ sessionId, isAdmin }) {
   const playheadPct = duration > 0 ? (Math.min(currentTime, duration) / duration) * 100 : 0;
   const trimDuration = Math.max(safeTrimEnd - trimStart, 0);
   const minTrimDuration = Math.min(0.15, Math.max(duration / 100, 0.05));
+  const trimRegionStyle = {
+    left: `${trimStartPct}%`,
+    width: `${Math.max(trimEndPct - trimStartPct, 0)}%`
+  };
+  const timelineTicks = useMemo(() => {
+    if (!duration || duration <= 0) return [];
+    let interval;
+    if (duration <= 3) interval = 0.5;
+    else if (duration <= 10) interval = 1;
+    else if (duration <= 30) interval = 2;
+    else if (duration <= 60) interval = 5;
+    else interval = 10;
+    const ticks = [];
+    for (let t = 0; t <= duration + 0.001; t += interval) {
+      ticks.push(Math.min(t, duration));
+    }
+    return ticks;
+  }, [duration]);
 
   const fetchClips = async () => {
     try {
@@ -137,7 +155,12 @@ function Clips({ sessionId, isAdmin }) {
   const handleTimeUpdate = () => {
     if (isSeekingRef.current) return;
     if (videoRef.current) {
-      setCurrentTime(videoRef.current.currentTime || 0);
+      const next = videoRef.current.currentTime || 0;
+      setCurrentTime(next);
+      if (isPlaying && safeTrimEnd > trimStart && next >= safeTrimEnd) {
+        videoRef.current.pause();
+        setIsPlaying(false);
+      }
     }
   };
 
@@ -293,6 +316,10 @@ function Clips({ sessionId, isAdmin }) {
       videoRef.current.pause();
       setIsPlaying(false);
     } else {
+      if (videoRef.current.currentTime < trimStart || videoRef.current.currentTime >= safeTrimEnd) {
+        videoRef.current.currentTime = trimStart;
+        setCurrentTime(trimStart);
+      }
       videoRef.current.play().catch(() => {});
       setIsPlaying(true);
     }
@@ -430,43 +457,48 @@ function Clips({ sessionId, isAdmin }) {
                   </div>
 
                   {duration > 0 && (
-                    <div style={{
-                      border: '1px solid var(--border)',
-                      borderRadius: '8px',
-                      padding: '12px',
-                      background: 'var(--bg)',
-                      marginBottom: '12px'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '10px' }}>
-                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          Playhead <strong style={{ color: 'var(--text-primary)' }}>{formatTime(currentTime)}</strong>
+                    <div style={{ marginBottom: '14px', padding: '14px', border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--bg)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', gap: '10px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                            <Scissors size={14} /> Visual Trim Editor
+                          </div>
+                          <button
+                            type="button"
+                            className={`btn ${isPlaying ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+                            onClick={handlePlayPause}
+                            title={isPlaying ? 'Pause selection' : 'Play selection'}
+                            style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px' }}
+                          >
+                            {isPlaying ? <Pause size={12} /> : <Play size={12} />}
+                            {isPlaying ? 'Pause' : 'Play'}
+                          </button>
                         </div>
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => syncTrimStart(currentTime)}>
-                            Set start here
-                          </button>
-                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => syncTrimEnd(currentTime)}>
-                            Set end here
-                          </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => syncTrimStart(currentTime)}>Set Start</button>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => syncTrimEnd(currentTime)}>Set End</button>
                           <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
                             syncTrimStart(0);
                             syncTrimEnd(duration);
                             seekVideo(0);
-                          }}>
-                            Full video
-                          </button>
+                          }}>Full</button>
+                          <div style={{ fontSize: '12px', color: 'var(--accent-text)', fontWeight: 600 }}>
+                            {formatTime(trimDuration)}
+                          </div>
                         </div>
                       </div>
+
                       <div
                         ref={timelineRef}
                         style={{
                           position: 'relative',
-                          height: '64px',
-                          borderRadius: '8px',
-                          background: 'var(--bg-secondary)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '10px',
                           overflow: 'visible',
-                          cursor: timelineDragMode === 'region' ? 'grabbing' : 'pointer',
-                          userSelect: 'none'
+                          marginBottom: '6px',
+                          background: 'var(--bg-card)',
+                          cursor: timelineDragMode ? 'grabbing' : 'pointer',
+                          outline: 'none'
                         }}
                         onMouseDown={(e) => {
                           if (e.button !== 0) return;
@@ -474,162 +506,184 @@ function Clips({ sessionId, isAdmin }) {
                         }}
                         onTouchStart={(e) => beginTimelineDrag(null, e)}
                       >
-                        <div style={{
-                          position: 'absolute',
-                          top: 0,
-                          bottom: 0,
-                          left: 0,
-                          width: `${trimStartPct}%`,
-                          background: 'rgba(0,0,0,0.28)',
-                          pointerEvents: 'none'
-                        }} />
-                        <div style={{
-                          position: 'absolute',
-                          top: 0,
-                          bottom: 0,
-                          left: `${trimEndPct}%`,
-                          right: 0,
-                          background: 'rgba(0,0,0,0.28)',
-                          pointerEvents: 'none'
-                        }} />
-                        <div style={{
-                          position: 'absolute',
-                          top: '8px',
-                          bottom: '8px',
-                          left: `${trimStartPct}%`,
-                          width: `${Math.max(trimEndPct - trimStartPct, 0)}%`,
-                          background: 'rgba(52, 152, 219, 0.28)',
-                          border: '1px solid rgba(52, 152, 219, 0.75)',
-                          borderRadius: '7px',
-                          boxShadow: timelineDragMode === 'region' ? '0 0 0 2px rgba(52, 152, 219, 0.35)' : 'none',
-                          cursor: 'grab'
-                        }} />
-                        <div style={{
-                          position: 'absolute',
-                          top: '50%',
-                          left: `${trimStartPct + Math.max((trimEndPct - trimStartPct) / 2, 0)}%`,
-                          transform: 'translate(-50%, -50%)',
-                          padding: '3px 8px',
-                          borderRadius: '4px',
-                          background: 'rgba(0,0,0,0.55)',
-                          color: '#fff',
-                          fontSize: '12px',
-                          fontWeight: 700,
-                          pointerEvents: 'none',
-                          whiteSpace: 'nowrap',
-                          zIndex: 1
-                        }}>
-                          {formatTime(trimDuration)}
-                        </div>
-                        <div style={{
-                          position: 'absolute',
-                          top: '8px',
-                          bottom: '8px',
-                          left: `${trimStartPct}%`,
-                          width: `${Math.max(trimEndPct - trimStartPct, 0)}%`,
-                          cursor: 'grab',
-                          zIndex: 1
-                        }} />
-                        <button
-                          type="button"
-                          onMouseDown={(e) => beginTimelineDrag('start', e)}
-                          onTouchStart={(e) => beginTimelineDrag('start', e)}
-                          title="Trim start"
-                          style={{
-                            position: 'absolute',
-                            top: '6px',
-                            bottom: '6px',
-                            left: `${trimStartPct}%`,
-                            width: '34px',
-                            marginLeft: '-17px',
-                            border: 'none',
-                            borderRadius: '6px',
-                            background: 'var(--accent)',
-                            cursor: 'ew-resize',
-                            zIndex: 4,
-                            color: '#fff',
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            boxShadow: timelineDragMode === 'start' ? '0 0 0 3px rgba(52, 152, 219, 0.35)' : '0 2px 8px rgba(0,0,0,0.25)'
-                          }}
-                        >
-                          <span style={{ display: 'block', lineHeight: 1 }}>IN</span>
-                        </button>
-                        <button
-                          type="button"
-                          onMouseDown={(e) => beginTimelineDrag('end', e)}
-                          onTouchStart={(e) => beginTimelineDrag('end', e)}
-                          title="Trim end"
-                          style={{
-                            position: 'absolute',
-                            top: '6px',
-                            bottom: '6px',
-                            left: `${trimEndPct}%`,
-                            width: '34px',
-                            marginLeft: '-17px',
-                            border: 'none',
-                            borderRadius: '6px',
-                            background: 'var(--accent)',
-                            cursor: 'ew-resize',
-                            zIndex: 4,
-                            color: '#fff',
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            boxShadow: timelineDragMode === 'end' ? '0 0 0 3px rgba(52, 152, 219, 0.35)' : '0 2px 8px rgba(0,0,0,0.25)'
-                          }}
-                        >
-                          <span style={{ display: 'block', lineHeight: 1 }}>OUT</span>
-                        </button>
-                        <div style={{
-                          position: 'absolute',
-                          top: '4px',
-                          bottom: '4px',
-                          left: `${playheadPct}%`,
-                          width: '2px',
-                          background: '#fff',
-                          boxShadow: '0 0 0 1px rgba(0,0,0,0.25)',
-                          pointerEvents: 'none',
-                          zIndex: 5
-                        }}>
+                        <div style={{ position: 'relative', borderRadius: '10px', overflow: 'hidden' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, minmax(0, 1fr))', height: '72px' }}>
+                            {Array.from({ length: 9 }, (_, i) => (
+                              <div key={`clip-tl-${i}`} style={{ borderRight: i === 8 ? 'none' : '1px solid rgba(255,255,255,0.06)' }}>
+                                <div style={{ width: '100%', height: '100%', background: i % 2 === 0 ? 'rgba(255,255,255,0.035)' : 'rgba(255,255,255,0.06)' }} />
+                              </div>
+                            ))}
+                          </div>
+
                           <div style={{
-                            position: 'absolute',
-                            top: '-1px',
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            width: 0,
-                            height: 0,
-                            borderLeft: '5px solid transparent',
-                            borderRight: '5px solid transparent',
-                            borderTop: '7px solid #fff'
+                            position: 'absolute', top: 0, bottom: 0, left: 0,
+                            width: `${trimStartPct}%`,
+                            background: 'rgba(0,0,0,0.45)',
+                            pointerEvents: 'none'
                           }} />
+
+                          <div style={{
+                            position: 'absolute', top: 0, bottom: 0,
+                            left: `${trimEndPct}%`, right: 0,
+                            background: 'rgba(0,0,0,0.45)',
+                            pointerEvents: 'none'
+                          }} />
+
+                          <div style={{
+                            position: 'absolute', top: 0, bottom: 0,
+                            ...trimRegionStyle,
+                            background: 'linear-gradient(180deg, rgba(44,147,250,0.15), rgba(44,147,250,0.3))',
+                            borderTop: '2px solid rgba(44,147,250,0.6)',
+                            borderBottom: '2px solid rgba(44,147,250,0.6)',
+                            boxShadow: timelineDragMode === 'region' ? 'inset 0 0 0 1px rgba(255,255,255,0.18)' : 'none',
+                            pointerEvents: 'none'
+                          }} />
+
+                          <button
+                            type="button"
+                            onMouseDown={(e) => beginTimelineDrag('region', e)}
+                            onTouchStart={(e) => beginTimelineDrag('region', e)}
+                            title="Drag selected clip"
+                            style={{
+                              position: 'absolute', top: 0, bottom: 0,
+                              ...trimRegionStyle,
+                              minWidth: '20px',
+                              border: 'none',
+                              padding: 0,
+                              background: 'transparent',
+                              cursor: timelineDragMode === 'region' ? 'grabbing' : 'grab',
+                              zIndex: 2
+                            }}
+                            aria-label="Move selected trim region"
+                          />
+
+                          <button
+                            type="button"
+                            onMouseDown={(e) => beginTimelineDrag('start', e)}
+                            onTouchStart={(e) => beginTimelineDrag('start', e)}
+                            style={{
+                              position: 'absolute', top: 0, bottom: 0, left: `clamp(7px, ${trimStartPct}%, calc(100% - 7px))`,
+                              width: '14px', marginLeft: '-7px', border: 'none', padding: 0,
+                              cursor: 'ew-resize', zIndex: 3,
+                              background: timelineDragMode === 'start' ? 'var(--accent)' : 'rgba(255,255,255,0.92)',
+                              boxShadow: timelineDragMode === 'start' ? '0 0 8px rgba(44,147,250,0.5)' : '0 0 0 1px rgba(0,0,0,0.25)',
+                              borderRadius: '2px',
+                              transition: 'background 0.1s, box-shadow 0.1s, transform 0.1s',
+                              transform: timelineDragMode === 'start' ? 'scaleY(1.08)' : 'scaleY(1)'
+                            }}
+                            aria-label="Trim start handle"
+                          >
+                            <div style={{
+                              position: 'absolute', top: '50%', left: '50%',
+                              transform: 'translate(-50%, -50%)',
+                              display: 'flex', flexDirection: 'column', gap: '3px'
+                            }}>
+                              <div style={{ width: '2px', height: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '1px' }} />
+                              <div style={{ width: '2px', height: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '1px' }} />
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onMouseDown={(e) => beginTimelineDrag('end', e)}
+                            onTouchStart={(e) => beginTimelineDrag('end', e)}
+                            style={{
+                              position: 'absolute', top: 0, bottom: 0, left: `clamp(7px, ${trimEndPct}%, calc(100% - 7px))`,
+                              width: '14px', marginLeft: '-7px', border: 'none', padding: 0,
+                              cursor: 'ew-resize', zIndex: 3,
+                              background: timelineDragMode === 'end' ? 'var(--accent)' : 'rgba(255,255,255,0.92)',
+                              boxShadow: timelineDragMode === 'end' ? '0 0 8px rgba(44,147,250,0.5)' : '0 0 0 1px rgba(0,0,0,0.25)',
+                              borderRadius: '2px',
+                              transition: 'background 0.1s, box-shadow 0.1s, transform 0.1s',
+                              transform: timelineDragMode === 'end' ? 'scaleY(1.08)' : 'scaleY(1)'
+                            }}
+                            aria-label="Trim end handle"
+                          >
+                            <div style={{
+                              position: 'absolute', top: '50%', left: '50%',
+                              transform: 'translate(-50%, -50%)',
+                              display: 'flex', flexDirection: 'column', gap: '3px'
+                            }}>
+                              <div style={{ width: '2px', height: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '1px' }} />
+                              <div style={{ width: '2px', height: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '1px' }} />
+                            </div>
+                          </button>
+
+                          <div style={{
+                            position: 'absolute', top: 0, bottom: 0, left: `${playheadPct}%`,
+                            width: '2px', background: '#fff', zIndex: 4,
+                            boxShadow: '0 0 0 1px rgba(0,0,0,0.2)',
+                            pointerEvents: 'none'
+                          }}>
+                            <div style={{
+                              position: 'absolute', top: '-1px', left: '50%', transform: 'translateX(-50%)',
+                              width: 0, height: 0,
+                              borderLeft: '5px solid transparent', borderRight: '5px solid transparent',
+                              borderTop: '6px solid var(--accent)',
+                              filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.3))'
+                            }} />
+                          </div>
                         </div>
+
+                        {timelineDragMode === 'start' && (
+                          <div style={{
+                            position: 'absolute', bottom: 'calc(100% - 2px)', left: `clamp(7px, ${trimStartPct}%, calc(100% - 7px))`,
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0,0,0,0.85)', color: '#fff',
+                            fontSize: '11px', fontWeight: 600, padding: '2px 6px',
+                            borderRadius: '4px', whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 5
+                          }}>
+                            {formatTime(trimStart)}
+                          </div>
+                        )}
+
+                        {timelineDragMode === 'end' && (
+                          <div style={{
+                            position: 'absolute', bottom: 'calc(100% - 2px)', left: `clamp(7px, ${trimEndPct}%, calc(100% - 7px))`,
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(0,0,0,0.85)', color: '#fff',
+                            fontSize: '11px', fontWeight: 600, padding: '2px 6px',
+                            borderRadius: '4px', whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 5
+                          }}>
+                            {formatTime(safeTrimEnd)}
+                          </div>
+                        )}
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '6px' }}>
-                        <span>0:00</span>
-                        <span>Start {formatTime(trimStart)}</span>
-                        <span>End {formatTime(safeTrimEnd)}</span>
-                        <span>{formatTime(duration)}</span>
+
+                      {timelineTicks.length > 0 && (
+                        <div style={{ position: 'relative', height: '16px', marginBottom: '4px', overflow: 'hidden' }}>
+                          {timelineTicks.map((t) => {
+                            const pct = (t / duration) * 100;
+                            const inRegion = t >= trimStart - 0.001 && t <= safeTrimEnd + 0.001;
+                            return (
+                              <span
+                                key={t}
+                                style={{
+                                  position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)',
+                                  fontSize: '10px', color: 'var(--text-secondary)',
+                                  opacity: inRegion ? 1 : 0.4, userSelect: 'none'
+                                }}
+                              >
+                                {formatTime(t)}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          Start: <strong style={{ color: 'var(--text-primary)' }}>{formatTime(trimStart)}</strong>
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                          Playhead: <strong style={{ color: 'var(--text-primary)' }}>{formatTime(currentTime)}</strong>
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'right' }}>
+                          End: <strong style={{ color: 'var(--text-primary)' }}>{formatTime(safeTrimEnd)}</strong>
+                        </div>
                       </div>
                     </div>
                   )}
-
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap'
-                  }}>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={handlePlayPause}>
-                      {isPlaying ? <><Pause size={14} /> Pause</> : <><Play size={14} /> Play</>}
-                    </button>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
-                      if (videoRef.current) videoRef.current.currentTime = 0;
-                    }}>
-                      <SkipBack size={14} /> Start
-                    </button>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
-                      if (videoRef.current) videoRef.current.currentTime = duration;
-                    }}>
-                      <SkipForward size={14} /> End
-                    </button>
-                  </div>
 
                   <div style={{
                     border: '1px solid var(--border)', borderRadius: '8px', padding: '12px',
