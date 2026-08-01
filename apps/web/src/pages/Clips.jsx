@@ -53,6 +53,8 @@ function Clips({ sessionId, isAdmin }) {
   const videoRef = useRef(null);
   const objectUrlRef = useRef(null);
   const isSeekingRef = useRef(false);
+  const timelineRef = useRef(null);
+  const dragModeRef = useRef(null);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -64,6 +66,11 @@ function Clips({ sessionId, isAdmin }) {
 
   const [myClipsPage, setMyClipsPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
+  const safeTrimEnd = trimEnd > 0 ? trimEnd : duration;
+  const trimStartPct = duration > 0 ? (Math.min(trimStart, duration) / duration) * 100 : 0;
+  const trimEndPct = duration > 0 ? (Math.min(safeTrimEnd, duration) / duration) * 100 : 0;
+  const playheadPct = duration > 0 ? (Math.min(currentTime, duration) / duration) * 100 : 0;
+  const trimDuration = Math.max(safeTrimEnd - trimStart, 0);
 
   const fetchClips = async () => {
     try {
@@ -132,6 +139,89 @@ function Clips({ sessionId, isAdmin }) {
     }
   };
 
+  const clampTrimTime = (value) => {
+    if (!duration || duration <= 0) return 0;
+    return Math.min(Math.max(value, 0), duration);
+  };
+
+  const syncTrimStart = (value) => {
+    const next = Math.min(clampTrimTime(value), Math.max(safeTrimEnd - 0.05, 0));
+    setTrimStart(next);
+    setTrimStartInput(formatTime(next));
+    if (videoRef.current) videoRef.current.currentTime = next;
+    setCurrentTime(next);
+  };
+
+  const syncTrimEnd = (value) => {
+    const next = Math.max(clampTrimTime(value), Math.min(trimStart + 0.05, duration));
+    setTrimEnd(next);
+    setTrimEndInput(formatTime(next));
+    if (videoRef.current) videoRef.current.currentTime = next;
+    setCurrentTime(next);
+  };
+
+  const timeFromPointer = (clientX) => {
+    if (!timelineRef.current || !duration || duration <= 0) return 0;
+    const rect = timelineRef.current.getBoundingClientRect();
+    const ratio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
+    return clampTrimTime(Math.min(Math.max(ratio, 0), 1) * duration);
+  };
+
+  const getPointerX = (e) => {
+    if (e.touches && e.touches.length > 0) return e.touches[0].clientX;
+    if (e.changedTouches && e.changedTouches.length > 0) return e.changedTouches[0].clientX;
+    return e.clientX;
+  };
+
+  const seekVideo = (time) => {
+    const next = clampTrimTime(time);
+    if (videoRef.current) videoRef.current.currentTime = next;
+    setCurrentTime(next);
+  };
+
+  const updateTimelineDrag = (clientX) => {
+    const mode = dragModeRef.current;
+    if (!mode) return;
+    const time = timeFromPointer(clientX);
+    if (mode === 'start') {
+      syncTrimStart(time);
+    } else if (mode === 'end') {
+      syncTrimEnd(time);
+    } else {
+      seekVideo(time);
+    }
+  };
+
+  const beginTimelineDrag = (mode, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragModeRef.current = mode;
+    updateTimelineDrag(getPointerX(e));
+  };
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!dragModeRef.current) return;
+      if (e.cancelable) e.preventDefault();
+      updateTimelineDrag(getPointerX(e));
+    };
+    const onUp = () => {
+      dragModeRef.current = null;
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+    window.addEventListener('touchcancel', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+      window.removeEventListener('touchcancel', onUp);
+    };
+  }, [duration, trimStart, safeTrimEnd]);
+
   const handleVideoSeeked = () => {
     isSeekingRef.current = false;
     setSeekValue(null);
@@ -165,26 +255,22 @@ function Clips({ sessionId, isAdmin }) {
 
   const handleTrimStartBlur = () => {
     const val = parseTime(trimStartInput);
-    setTrimStart(val);
-    setTrimStartInput(formatTime(val));
+    syncTrimStart(val);
   };
 
   const handleTrimEndBlur = () => {
     const val = parseTime(trimEndInput);
     const clamped = Math.max(val, 0);
-    setTrimEnd(clamped || duration);
-    setTrimEndInput(formatTime(clamped || duration));
+    syncTrimEnd(clamped || duration);
   };
 
   const handleSetStart = () => {
-    setTrimStart(currentTime);
-    setTrimStartInput(formatTime(currentTime));
+    syncTrimStart(currentTime);
     showToast(`Start set to ${formatTime(currentTime)}`);
   };
 
   const handleSetEnd = () => {
-    setTrimEnd(currentTime);
-    setTrimEndInput(formatTime(currentTime));
+    syncTrimEnd(currentTime);
     showToast(`End set to ${formatTime(currentTime)}`);
   };
 
@@ -316,6 +402,124 @@ function Clips({ sessionId, isAdmin }) {
                     </div>
                   </div>
 
+                  {duration > 0 && (
+                    <div style={{
+                      border: '1px solid var(--border)',
+                      borderRadius: '8px',
+                      padding: '10px',
+                      background: 'var(--bg)',
+                      marginBottom: '12px'
+                    }}>
+                      <div
+                        ref={timelineRef}
+                        style={{
+                          position: 'relative',
+                          height: '42px',
+                          borderRadius: '6px',
+                          background: 'var(--bg-secondary)',
+                          overflow: 'hidden',
+                          cursor: 'pointer',
+                          marginBottom: '10px'
+                        }}
+                        onMouseDown={(e) => beginTimelineDrag('seek', e)}
+                        onTouchStart={(e) => beginTimelineDrag('seek', e)}
+                      >
+                        <div style={{
+                          position: 'absolute',
+                          top: 0,
+                          bottom: 0,
+                          left: `${trimStartPct}%`,
+                          width: `${Math.max(trimEndPct - trimStartPct, 0)}%`,
+                          background: 'rgba(52, 152, 219, 0.28)',
+                          borderLeft: '2px solid var(--accent)',
+                          borderRight: '2px solid var(--accent)'
+                        }} />
+                        <button
+                          type="button"
+                          onMouseDown={(e) => beginTimelineDrag('start', e)}
+                          onTouchStart={(e) => beginTimelineDrag('start', e)}
+                          title="Trim start"
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            bottom: 0,
+                            left: `${trimStartPct}%`,
+                            width: '18px',
+                            marginLeft: '-9px',
+                            border: 'none',
+                            borderRadius: '3px',
+                            background: 'var(--accent)',
+                            cursor: 'ew-resize',
+                            zIndex: 2
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onMouseDown={(e) => beginTimelineDrag('end', e)}
+                          onTouchStart={(e) => beginTimelineDrag('end', e)}
+                          title="Trim end"
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            bottom: 0,
+                            left: `${trimEndPct}%`,
+                            width: '18px',
+                            marginLeft: '-9px',
+                            border: 'none',
+                            borderRadius: '3px',
+                            background: 'var(--accent)',
+                            cursor: 'ew-resize',
+                            zIndex: 2
+                          }}
+                        />
+                        <div style={{
+                          position: 'absolute',
+                          top: 0,
+                          bottom: 0,
+                          left: `${playheadPct}%`,
+                          width: '2px',
+                          background: '#fff',
+                          boxShadow: '0 0 0 1px rgba(0,0,0,0.25)',
+                          pointerEvents: 'none',
+                          zIndex: 3
+                        }} />
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                            <span>Start</span>
+                            <strong style={{ color: 'var(--text-primary)' }}>{formatTime(trimStart)}</strong>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={duration}
+                            step={0.05}
+                            value={trimStart}
+                            onChange={(e) => syncTrimStart(parseFloat(e.target.value))}
+                            style={{ width: '100%' }}
+                          />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                            <span>End</span>
+                            <strong style={{ color: 'var(--text-primary)' }}>{formatTime(safeTrimEnd)}</strong>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={duration}
+                            step={0.05}
+                            value={safeTrimEnd}
+                            onChange={(e) => syncTrimEnd(parseFloat(e.target.value))}
+                            style={{ width: '100%' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap'
                   }}>
@@ -389,14 +593,14 @@ function Clips({ sessionId, isAdmin }) {
                     </div>
                   </div>
 
-                  {trimEnd > trimStart && trimEnd > 0 && isFinite(duration) && duration > 0 && (
+                  {safeTrimEnd > trimStart && safeTrimEnd > 0 && isFinite(duration) && duration > 0 && (
                     <div style={{
                       fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px',
                       padding: '8px 10px', borderRadius: '6px', background: 'rgba(52, 152, 219, 0.1)',
                       border: '1px solid rgba(52, 152, 219, 0.2)'
                     }}>
                       <Video size={12} style={{ marginRight: '4px' }} />
-                      Trimmed: {formatTime(trimEnd - trimStart)} ({Math.round((trimEnd - trimStart) / duration * 100)}% of original)
+                      Trimmed: {formatTime(trimDuration)} ({Math.round(trimDuration / duration * 100)}% of original)
                       {' — '}
                       <span style={{ color: 'var(--accent-text)', fontWeight: 500 }}>ffmpeg trim</span>
                     </div>

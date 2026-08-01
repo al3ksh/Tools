@@ -30,6 +30,7 @@ export default function GifMaker({ sessionId, isAdmin }) {
 
   const [fps, setFps] = useState(15);
   const [width, setWidth] = useState(480);
+  const [targetMB, setTargetMB] = useState(8);
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(0);
   const [reverse, setReverse] = useState(false);
@@ -60,6 +61,9 @@ export default function GifMaker({ sessionId, isAdmin }) {
   const timelineStart = duration > 0 ? (safeStart / duration) * 100 : 0;
   const timelineWidth = duration > 0 ? Math.max(((safeEnd - safeStart) / duration) * 100, 1) : 100;
   const frameInterval = 1 / Math.max(Number(fps) || 15, 1);
+  const targetBytes = Math.max(Number(targetMB) || 0, 0) * 1024 * 1024;
+  const resultRatio = resultSize && targetBytes > 0 ? Math.min((resultSize / targetBytes) * 100, 100) : 0;
+  const resultOverTarget = resultSize && targetBytes > 0 && resultSize > targetBytes;
 
   const qualityTag = useMemo(() => {
     const pixelScore = Number(width) * Number(fps) * Math.max(clipDuration, 1);
@@ -494,6 +498,7 @@ export default function GifMaker({ sessionId, isAdmin }) {
     clearTimelineFrames();
     setFps(15);
     setWidth(480);
+    setTargetMB(8);
     setSpeed(1);
     setLoop(0);
     setReverse(false);
@@ -651,17 +656,7 @@ export default function GifMaker({ sessionId, isAdmin }) {
                             <img src={frame.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'brightness(0.82)', pointerEvents: 'none' }} draggable={false} />
                           ) : (
                             <div style={{ width: '100%', height: '100%', background: 'linear-gradient(120deg, rgba(255,255,255,0.03), rgba(255,255,255,0.08), rgba(255,255,255,0.03))' }} />
-            )}
-
-            {isStaticImage && (
-            <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', marginBottom: '12px' }}>
-              <div className="form-group">
-                <label className="form-label">Output Width</label>
-                <input className="form-input" type="number" min="120" max="1080" step="2" value={width} onChange={(e) => setWidth(e.target.value)} />
-              </div>
-            </div>
-            )}
-
+                          )}
                         </div>
                       ))}
                     </div>
@@ -836,6 +831,15 @@ export default function GifMaker({ sessionId, isAdmin }) {
                 </div>
               )}
 
+            {isStaticImage && (
+              <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', marginBottom: '12px' }}>
+                <div className="form-group">
+                  <label className="form-label">Output Width</label>
+                  <input className="form-input" type="number" min="120" max="1080" step="2" value={width} onChange={(e) => setWidth(e.target.value)} />
+                </div>
+              </div>
+            )}
+
             {!isGifInput && !isStaticImage && (
               <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div className="form-group">
@@ -866,6 +870,10 @@ export default function GifMaker({ sessionId, isAdmin }) {
               <div className="form-group">
                 <label className="form-label">Width</label>
                 <input className="form-input" type="number" min="120" max="1080" step="2" value={width} onChange={(e) => setWidth(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Target MB</label>
+                <input className="form-input" type="number" min="1" max="100" step="1" value={targetMB} onChange={(e) => setTargetMB(e.target.value)} />
               </div>
               <div className="form-group">
                 <label className="form-label">Speed</label>
@@ -945,11 +953,24 @@ export default function GifMaker({ sessionId, isAdmin }) {
               {resultUrl ? (
                 <>
                   <img src={resultUrl} alt="GIF result" style={{ width: '100%', maxWidth: '480px', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px', border: '1px solid var(--border)', display: 'block' }} />
-                  <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-                      {resultSize ? formatBytes(resultSize) : ''}
-                    </span>
-                    <button className="btn btn-primary" onClick={handleDownload}><Download size={16} /> Download GIF</button>
+                  <div style={{ marginTop: '10px', display: 'grid', gap: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ color: resultOverTarget ? 'var(--warning)' : 'var(--text-secondary)', fontSize: '13px', fontWeight: resultOverTarget ? 700 : 500 }}>
+                        {resultSize ? `${formatBytes(resultSize)} / target ${formatBytes(targetBytes)}` : ''}
+                      </span>
+                      <button className="btn btn-primary" onClick={handleDownload}><Download size={16} /> Download GIF</button>
+                    </div>
+                    <div className="progress-bar" style={{ height: '8px' }}>
+                      <div className="progress-fill" style={{
+                        width: `${resultRatio}%`,
+                        backgroundColor: resultOverTarget ? 'var(--warning)' : 'var(--success)'
+                      }} />
+                    </div>
+                    {resultOverTarget && (
+                      <div style={{ color: 'var(--warning)', fontSize: '12px' }}>
+                        Lower FPS, width or duration to fit this target.
+                      </div>
+                    )}
                   </div>
                 </>
               ) : (
