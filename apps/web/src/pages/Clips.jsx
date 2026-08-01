@@ -73,6 +73,11 @@ function Clips({ sessionId, isAdmin }) {
   const playheadPct = duration > 0 ? (Math.min(currentTime, duration) / duration) * 100 : 0;
   const trimDuration = Math.max(safeTrimEnd - trimStart, 0);
   const minTrimDuration = Math.min(0.15, Math.max(duration / 100, 0.05));
+  const handleVisualRadius = duration > 0 ? Math.max(duration * 0.006, 0.08) : 0;
+  const playheadOverHandle = duration > 0 && (
+    Math.abs(currentTime - trimStart) <= handleVisualRadius ||
+    Math.abs(currentTime - safeTrimEnd) <= handleVisualRadius
+  );
   const trimRegionStyle = {
     left: `${trimStartPct}%`,
     width: `${Math.max(trimEndPct - trimStartPct, 0)}%`
@@ -231,13 +236,18 @@ function Clips({ sessionId, isAdmin }) {
     } else if (mode === 'end') {
       syncTrimEnd(time);
     } else if (mode === 'region' && regionDragRef.current) {
+      const drag = regionDragRef.current;
+      const movedPx = Math.abs(clientX - drag.mouseX);
+      if (!drag.didDrag && movedPx < 5) return;
+      drag.didDrag = true;
+
       const rect = timelineRef.current.getBoundingClientRect();
-      const startRatio = rect.width > 0 ? (regionDragRef.current.mouseX - rect.left) / rect.width : 0;
+      const startRatio = rect.width > 0 ? (drag.mouseX - rect.left) / rect.width : 0;
       const currentRatio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
       const delta = (currentRatio - startRatio) * duration;
-      const length = regionDragRef.current.end - regionDragRef.current.start;
-      let nextStart = regionDragRef.current.start + delta;
-      let nextEnd = regionDragRef.current.end + delta;
+      const length = drag.end - drag.start;
+      let nextStart = drag.start + delta;
+      let nextEnd = drag.end + delta;
 
       if (nextStart < 0) {
         nextStart = 0;
@@ -256,7 +266,8 @@ function Clips({ sessionId, isAdmin }) {
       setTrimEnd(nextEnd);
       setTrimStartInput(formatTime(nextStart));
       setTrimEndInput(formatTime(nextEnd));
-      seekVideo(nextStart);
+      const nextPlayhead = Math.min(Math.max(drag.playheadOffset + nextStart, nextStart), nextEnd);
+      seekVideo(nextPlayhead);
     } else {
       seekVideo(time);
     }
@@ -270,8 +281,16 @@ function Clips({ sessionId, isAdmin }) {
     dragModeRef.current = resolvedMode;
     setTimelineDragMode(resolvedMode);
     if (resolvedMode === 'region') {
-      regionDragRef.current = { mouseX: clientX, start: trimStart, end: safeTrimEnd };
-      seekVideo(trimStart);
+      const clickedTime = timeFromPointer(clientX);
+      const playheadOffset = currentTime >= trimStart && currentTime <= safeTrimEnd ? currentTime - trimStart : clickedTime - trimStart;
+      regionDragRef.current = {
+        mouseX: clientX,
+        start: trimStart,
+        end: safeTrimEnd,
+        clickedTime,
+        playheadOffset,
+        didDrag: false
+      };
       return;
     }
     regionDragRef.current = null;
@@ -285,6 +304,9 @@ function Clips({ sessionId, isAdmin }) {
       updateTimelineDrag(getPointerX(e));
     };
     const onUp = () => {
+      if (dragModeRef.current === 'region' && regionDragRef.current && !regionDragRef.current.didDrag) {
+        seekVideo(regionDragRef.current.clickedTime);
+      }
       dragModeRef.current = null;
       regionDragRef.current = null;
       setTimelineDragMode(null);
@@ -543,7 +565,7 @@ function Clips({ sessionId, isAdmin }) {
                             type="button"
                             onMouseDown={(e) => beginTimelineDrag('region', e)}
                             onTouchStart={(e) => beginTimelineDrag('region', e)}
-                            title="Drag selected clip"
+                            title="Click to seek, drag to move selected clip"
                             style={{
                               position: 'absolute', top: 0, bottom: 0,
                               ...trimRegionStyle,
@@ -551,10 +573,10 @@ function Clips({ sessionId, isAdmin }) {
                               border: 'none',
                               padding: 0,
                               background: 'transparent',
-                              cursor: timelineDragMode === 'region' ? 'grabbing' : 'grab',
+                              cursor: timelineDragMode === 'region' ? 'grabbing' : 'pointer',
                               zIndex: 2
                             }}
-                            aria-label="Move selected trim region"
+                            aria-label="Click to seek or drag selected trim region"
                           />
 
                           <button
@@ -562,9 +584,9 @@ function Clips({ sessionId, isAdmin }) {
                             onMouseDown={(e) => beginTimelineDrag('start', e)}
                             onTouchStart={(e) => beginTimelineDrag('start', e)}
                             style={{
-                              position: 'absolute', top: 0, bottom: 0, left: `clamp(7px, ${trimStartPct}%, calc(100% - 7px))`,
-                              width: '14px', marginLeft: '-7px', border: 'none', padding: 0,
-                              cursor: 'ew-resize', zIndex: 3,
+                              position: 'absolute', top: 0, bottom: 0, left: `clamp(10px, ${trimStartPct}%, calc(100% - 10px))`,
+                              width: '20px', marginLeft: '-10px', border: 'none', padding: 0,
+                              cursor: 'ew-resize', zIndex: 5,
                               background: timelineDragMode === 'start' ? 'var(--accent)' : 'rgba(255,255,255,0.92)',
                               boxShadow: timelineDragMode === 'start' ? '0 0 8px rgba(44,147,250,0.5)' : '0 0 0 1px rgba(0,0,0,0.25)',
                               borderRadius: '2px',
@@ -588,9 +610,9 @@ function Clips({ sessionId, isAdmin }) {
                             onMouseDown={(e) => beginTimelineDrag('end', e)}
                             onTouchStart={(e) => beginTimelineDrag('end', e)}
                             style={{
-                              position: 'absolute', top: 0, bottom: 0, left: `clamp(7px, ${trimEndPct}%, calc(100% - 7px))`,
-                              width: '14px', marginLeft: '-7px', border: 'none', padding: 0,
-                              cursor: 'ew-resize', zIndex: 3,
+                              position: 'absolute', top: 0, bottom: 0, left: `clamp(10px, ${trimEndPct}%, calc(100% - 10px))`,
+                              width: '20px', marginLeft: '-10px', border: 'none', padding: 0,
+                              cursor: 'ew-resize', zIndex: 5,
                               background: timelineDragMode === 'end' ? 'var(--accent)' : 'rgba(255,255,255,0.92)',
                               boxShadow: timelineDragMode === 'end' ? '0 0 8px rgba(44,147,250,0.5)' : '0 0 0 1px rgba(0,0,0,0.25)',
                               borderRadius: '2px',
@@ -612,7 +634,9 @@ function Clips({ sessionId, isAdmin }) {
                           <div style={{
                             position: 'absolute', top: 0, bottom: 0, left: `${playheadPct}%`,
                             width: '2px', background: '#fff', zIndex: 4,
+                            opacity: playheadOverHandle ? 0 : 1,
                             boxShadow: '0 0 0 1px rgba(0,0,0,0.2)',
+                            transition: 'opacity 0.08s',
                             pointerEvents: 'none'
                           }}>
                             <div style={{
