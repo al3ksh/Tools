@@ -48,6 +48,26 @@ function isBlockedHostname(hostname) {
     host.endsWith('.arpa');
 }
 
+function getPublicDnsRecords(records) {
+  const safeRecords = (Array.isArray(records) ? records : [records])
+    .filter((record) => record && record.address && net.isIP(record.address));
+
+  if (safeRecords.length === 0) {
+    throw new Error('DNS lookup returned no usable addresses');
+  }
+
+  for (const record of safeRecords) {
+    if (record.family === 4 && isPrivateIpv4(record.address)) {
+      throw new Error('Blocked target address');
+    }
+    if (record.family === 6 && isPrivateIpv6(record.address)) {
+      throw new Error('Blocked target address');
+    }
+  }
+
+  return safeRecords;
+}
+
 function safePath(baseDir, relativePath) {
   const resolved = path.resolve(baseDir, relativePath);
   const normalizedBase = path.resolve(baseDir);
@@ -140,15 +160,7 @@ async function validatePublicUrl(rawUrl) {
     throw new Error('Blocked target address');
   }
 
-  const records = await dns.lookup(parsed.hostname, { all: true });
-  for (const record of records) {
-    if (record.family === 4 && isPrivateIpv4(record.address)) {
-      throw new Error('Blocked target address');
-    }
-    if (record.family === 6 && isPrivateIpv6(record.address)) {
-      throw new Error('Blocked target address');
-    }
-  }
+  getPublicDnsRecords(await dns.lookup(parsed.hostname, { all: true }));
 
   return parsed;
 }
@@ -172,16 +184,17 @@ function fetchWithPinnedDns(parsed, options = {}) {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
       },
       lookup: (hostname, opts, cb) => {
-        dns.lookup(hostname, { all: true, ...opts }).then(records => {
-          for (const record of records) {
-            if (record.family === 4 && isPrivateIpv4(record.address)) {
-              return cb(new Error('Blocked target address'));
-            }
-            if (record.family === 6 && isPrivateIpv6(record.address)) {
-              return cb(new Error('Blocked target address'));
-            }
+        dns.lookup(hostname, {
+          all: true,
+          family: opts.family || 0,
+          hints: opts.hints,
+          verbatim: opts.verbatim
+        }).then(records => {
+          const safeRecords = getPublicDnsRecords(records);
+          const preferred = safeRecords.find(r => r.family === 4) || safeRecords[0];
+          if (opts.all) {
+            return cb(null, safeRecords.map(record => ({ address: record.address, family: record.family })));
           }
-          const preferred = records.find(r => r.family === 4) || records[0];
           cb(null, preferred.address, preferred.family);
         }).catch(cb);
       }
@@ -294,7 +307,7 @@ router.get('/preview', async (req, res) => {
     }
 
     console.error('Preview extraction error:', msg);
-    res.status(500).json({ error: 'Failed to extract preview' });
+    res.json({ image: null });
   }
 });
 

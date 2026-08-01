@@ -331,6 +331,7 @@ function createJobProcessor(context) {
       activeProcesses.set(jobId, ytdlp);
       let logsTail = '';
       let lastProgressUpdate = 0;
+      let lastLogUpdate = 0;
       let timedOut = false;
 
       const processTimer = setTimeout(() => {
@@ -359,6 +360,11 @@ function createJobProcessor(context) {
         logsTail = logsTail + data.toString();
         if (logsTail.length > 5000) {
           logsTail = logsTail.slice(-5000);
+        }
+
+        if (Date.now() - lastLogUpdate >= 1000) {
+          updateProgress(jobId, presetConfig.asGif ? 4 : 8, logsTail);
+          lastLogUpdate = Date.now();
         }
       });
 

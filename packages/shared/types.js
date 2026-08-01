@@ -6,7 +6,7 @@ const PRESETS = {
     extractAudio: false
   },
   VIDEO_MP4_720P: {
-    format: 'bestvideo[height<=720]+bestaudio/best[height<=720]',
+    format: 'bestvideo[height<=720]+bestaudio/best[height<=720]/best',
     mergeOutputFormat: 'mp4',
     extractAudio: false
   },
@@ -16,7 +16,7 @@ const PRESETS = {
     extractAudio: false
   },
   VIDEO_GIF_SOCIAL: {
-    format: 'bestvideo[height<=720]+bestaudio/best[height<=720]/best[height<=720]',
+    format: 'bestvideo[height<=720]+bestaudio/best[height<=720]/best',
     mergeOutputFormat: 'mp4',
     extractAudio: false,
     asGif: true,

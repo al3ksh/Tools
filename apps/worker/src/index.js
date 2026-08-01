@@ -112,6 +112,7 @@ const selectCancellingJobs = db.prepare(`
   SELECT id FROM jobs WHERE isCancelling = 1 AND status IN ('queued', 'running')
 `);
 const clearCancellingFlag = db.prepare(`UPDATE jobs SET isCancelling = 0 WHERE id = ?`);
+const selectJobStatus = db.prepare(`SELECT status FROM jobs WHERE id = ?`);
 const cancelIfCancellable = db.prepare(`
   UPDATE jobs SET status = 'failed', finishedAt = ?, error = ?, isCancelling = 0 WHERE id = ? AND status IN ('queued', 'running')
 `);
@@ -169,7 +170,10 @@ async function runClaimedJob(job) {
     console.log(`Job ${job.id} completed`);
   } catch (err) {
     console.error(`Job ${job.id} failed:`, err.message);
-    finishWithError(job.id, err.message || 'Job failed');
+    const current = selectJobStatus.get(job.id);
+    if (!current || current.status === 'running') {
+      finishWithError(job.id, err.message || 'Job failed');
+    }
   } finally {
     activeJobIds.delete(job.id);
   }
