@@ -61,6 +61,11 @@ export default function GifMaker({ sessionId, isAdmin }) {
   const timelineStart = duration > 0 ? (safeStart / duration) * 100 : 0;
   const timelineWidth = duration > 0 ? Math.max(((safeEnd - safeStart) / duration) * 100, 1) : 100;
   const frameInterval = 1 / Math.max(Number(fps) || 15, 1);
+  const handleVisualRadius = duration > 0 ? Math.max(duration * 0.006, 0.08) : 0;
+  const playheadOverHandle = duration > 0 && (
+    Math.abs(currentTime - safeStart) <= handleVisualRadius ||
+    Math.abs(currentTime - safeEnd) <= handleVisualRadius
+  );
   const targetBytes = Math.max(Number(targetMB) || 0, 0) * 1024 * 1024;
   const resultRatio = resultSize && targetBytes > 0 ? Math.min((resultSize / targetBytes) * 100, 100) : 0;
   const resultOverTarget = resultSize && targetBytes > 0 && resultSize > targetBytes;
@@ -277,7 +282,7 @@ export default function GifMaker({ sessionId, isAdmin }) {
     if (!duration || duration <= 0 || !timelineRef.current) return 'playhead';
     const t = timeFromPointer(clientX);
     const pxPerSec = timelineRef.current.getBoundingClientRect().width / duration;
-    const handleRadius = Math.max(8 / pxPerSec, 0.05);
+    const handleRadius = Math.max(14 / pxPerSec, 0.08);
     if (Math.abs(t - safeStart) <= handleRadius) return 'start';
     if (Math.abs(t - safeEnd) <= handleRadius) return 'end';
     if (t > safeStart && t < safeEnd) return 'region';
@@ -316,12 +321,17 @@ export default function GifMaker({ sessionId, isAdmin }) {
     }
 
     if (mode === 'region' && regionDragRef.current) {
+      const drag = regionDragRef.current;
+      const movedPx = Math.abs(clientX - drag.mouseX);
+      if (!drag.didDrag && movedPx < 5) return;
+      drag.didDrag = true;
+
       const rect = timelineRef.current.getBoundingClientRect();
-      const startRatio = rect.width > 0 ? (regionDragRef.current.mouseX - rect.left) / rect.width : 0;
+      const startRatio = rect.width > 0 ? (drag.mouseX - rect.left) / rect.width : 0;
       const currentRatio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
       const delta = (currentRatio - startRatio) * duration;
-      let newStart = regionDragRef.current.start + delta;
-      let newEnd = regionDragRef.current.end + delta;
+      let newStart = drag.start + delta;
+      let newEnd = drag.end + delta;
 
       if (newStart < 0) { newEnd -= newStart; newStart = 0; }
       if (newEnd > duration) { newStart -= (newEnd - duration); newEnd = duration; }
@@ -331,7 +341,8 @@ export default function GifMaker({ sessionId, isAdmin }) {
 
       setStartSec(String(newStart));
       setEndSec(String(newEnd));
-      jumpToTime(newStart);
+      const nextPlayhead = Math.min(Math.max(drag.playheadOffset + newStart, newStart), newEnd);
+      jumpToTime(nextPlayhead);
       return;
     }
 
@@ -347,7 +358,17 @@ export default function GifMaker({ sessionId, isAdmin }) {
     const isHandle = mode === 'start' || mode === 'end';
     setDraggingHandle(isHandle ? mode : null);
     if (mode === 'region') {
-      regionDragRef.current = { mouseX: clientX, start: safeStart, end: safeEnd };
+      const clickedTime = snapToFrame(timeFromPointer(clientX));
+      const playheadOffset = currentTime >= safeStart && currentTime <= safeEnd ? currentTime - safeStart : clickedTime - safeStart;
+      regionDragRef.current = {
+        mouseX: clientX,
+        start: safeStart,
+        end: safeEnd,
+        clickedTime,
+        playheadOffset,
+        didDrag: false,
+      };
+      return;
     }
     updateTrimFromPointer(clientX, mode);
   };
@@ -360,6 +381,9 @@ export default function GifMaker({ sessionId, isAdmin }) {
     };
 
     const onUp = () => {
+      if (dragModeRef.current === 'region' && regionDragRef.current && !regionDragRef.current.didDrag) {
+        jumpToTime(regionDragRef.current.clickedTime);
+      }
       dragModeRef.current = null;
       regionDragRef.current = null;
       setIsDragging(false);
@@ -694,9 +718,9 @@ export default function GifMaker({ sessionId, isAdmin }) {
                       onMouseEnter={() => setHoveredHandle('start')}
                       onMouseLeave={() => setHoveredHandle(null)}
                       style={{
-                        position: 'absolute', top: 0, bottom: 0, left: `${timelineStart}%`,
-                        width: '14px', marginLeft: '-7px', border: 'none', padding: 0,
-                        cursor: 'ew-resize', zIndex: 2,
+                        position: 'absolute', top: 0, bottom: 0, left: `clamp(10px, ${timelineStart}%, calc(100% - 10px))`,
+                        width: '20px', marginLeft: '-10px', border: 'none', padding: 0,
+                        cursor: 'ew-resize', zIndex: 5,
                         background: hoveredHandle === 'start' || draggingHandle === 'start'
                           ? 'var(--accent)'
                           : 'rgba(255,255,255,0.92)',
@@ -726,9 +750,9 @@ export default function GifMaker({ sessionId, isAdmin }) {
                       onMouseEnter={() => setHoveredHandle('end')}
                       onMouseLeave={() => setHoveredHandle(null)}
                       style={{
-                        position: 'absolute', top: 0, bottom: 0, left: `${timelineStart + timelineWidth}%`,
-                        width: '14px', marginLeft: '-7px', border: 'none', padding: 0,
-                        cursor: 'ew-resize', zIndex: 2,
+                        position: 'absolute', top: 0, bottom: 0, left: `clamp(10px, ${timelineStart + timelineWidth}%, calc(100% - 10px))`,
+                        width: '20px', marginLeft: '-10px', border: 'none', padding: 0,
+                        cursor: 'ew-resize', zIndex: 5,
                         background: hoveredHandle === 'end' || draggingHandle === 'end'
                           ? 'var(--accent)'
                           : 'rgba(255,255,255,0.92)',
@@ -753,8 +777,10 @@ export default function GifMaker({ sessionId, isAdmin }) {
 
                     <div style={{
                       position: 'absolute', top: 0, bottom: 0, left: `${timelinePlayhead}%`,
-                      width: '2px', background: '#fff', zIndex: 2,
+                      width: '2px', background: '#fff', zIndex: 4,
+                      opacity: playheadOverHandle ? 0 : 1,
                       boxShadow: '0 0 0 1px rgba(0,0,0,0.2)',
+                      transition: 'opacity 0.08s',
                       pointerEvents: 'none',
                     }}>
                       <div style={{
