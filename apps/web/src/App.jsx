@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Settings, Sun, Moon, Shield, X, Menu, Cookie, FileText, QrCode, Files, Sparkles, Film } from 'lucide-react';
+import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Settings, Sun, Moon, Shield, X, Menu, Cookie, FileText, QrCode, Files, Sparkles, Film, PackageOpen } from 'lucide-react';
 import { lazy, Suspense, useState, useEffect } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
@@ -7,6 +7,7 @@ import './index.css';
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Downloader = lazy(() => import('./pages/Downloader'));
 const Converter = lazy(() => import('./pages/Converter'));
+const Compressor = lazy(() => import('./pages/Compressor'));
 const Shortener = lazy(() => import('./pages/Shortener'));
 const Drop = lazy(() => import('./pages/Drop'));
 const DropView = lazy(() => import('./pages/DropView'));
@@ -218,6 +219,10 @@ function App() {
                 <span className="nav-icon"><FileAudio size={18} /></span>
                 <span>Converter</span>
               </NavLink>
+              <NavLink to="/compress" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
+                <span className="nav-icon"><PackageOpen size={18} /></span>
+                <span>Compressor</span>
+              </NavLink>
               <NavLink to="/shortener" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
                 <span className="nav-icon"><LinkIcon size={18} /></span>
                 <span>Shortener</span>
@@ -305,6 +310,7 @@ function App() {
                 <Route path="/downloader" element={<Downloader sessionId={sessionId} />} />
                 <Route path="/download" element={<Downloader sessionId={sessionId} />} />
                 <Route path="/converter" element={<Converter sessionId={sessionId} isAdmin={isAdmin} />} />
+                <Route path="/compress" element={<Compressor sessionId={sessionId} isAdmin={isAdmin} />} />
                 <Route path="/shortener" element={<Shortener sessionId={sessionId} />} />
                 <Route path="/drop" element={<Drop sessionId={sessionId} isAdmin={isAdmin} />} />
                 <Route path="/qr" element={<QRCode />} />

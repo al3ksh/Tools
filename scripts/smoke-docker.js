@@ -118,6 +118,22 @@ async function runGifSmoke(files) {
   log(`GIF render OK (${job.id}, ${size} bytes)`);
 }
 
+async function runCompressSmoke(files) {
+  const form = new FormData();
+  form.append('sessionId', SESSION_ID);
+  form.append('file', new Blob([fs.readFileSync(files.png)], { type: 'image/png' }), 'codex-smoke.png');
+  form.append('format', 'webp');
+  form.append('quality', '70');
+  form.append('maxWidth', '120');
+
+  const created = await requestJson(`${BASE_URL}/api/compress`, { method: 'POST', body: form });
+  JOBS.push(created.jobId);
+  const job = await waitForJob(created.jobId);
+  const size = await downloadJobFile(created.jobId, path.join(DATA_DIR, 'codex-smoke-compressed.webp'));
+  if (!job.outputJson || !job.outputJson.compressedSize) throw new Error('Compression job completed without size metadata');
+  log(`Compression OK (${job.id}, ${size} bytes)`);
+}
+
 async function runClipSmoke(files) {
   const uploadId = `codexsmoke${Date.now()}`;
   const body = fs.readFileSync(files.mp4);
@@ -184,6 +200,7 @@ async function main() {
     await requestJson(`${BASE_URL}/api/health`);
     await runPdfSmoke(files);
     await runGifSmoke(files);
+    await runCompressSmoke(files);
     await runClipSmoke(files);
     log('All smoke checks passed');
   } finally {

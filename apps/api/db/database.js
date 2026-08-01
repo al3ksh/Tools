@@ -32,12 +32,12 @@ try {
   if (!preflightColumns.includes('isCancelling')) db.exec('ALTER TABLE jobs ADD COLUMN isCancelling INTEGER DEFAULT 0');
 
   const jobsCreateSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'").get()?.sql || '';
-  if (jobsCreateSql && (!jobsCreateSql.includes("'pdf'") || !jobsCreateSql.includes("'gif'") || !jobsCreateSql.includes("'clip'"))) {
+  if (jobsCreateSql && (!jobsCreateSql.includes("'pdf'") || !jobsCreateSql.includes("'gif'") || !jobsCreateSql.includes("'clip'") || !jobsCreateSql.includes("'compress'"))) {
     db.transaction(() => {
       db.exec(`
         CREATE TABLE jobs_new (
           id TEXT PRIMARY KEY,
-          type TEXT NOT NULL CHECK(type IN ('download', 'convert', 'pdf', 'gif', 'clip')),
+          type TEXT NOT NULL CHECK(type IN ('download', 'convert', 'pdf', 'gif', 'clip', 'compress')),
           status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued', 'running', 'done', 'failed', 'expired', 'deleted')),
           progress INTEGER,
           createdAt TEXT NOT NULL,
@@ -67,7 +67,7 @@ try {
     db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_session ON jobs(sessionId)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_type ON jobs(type)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_cancelling ON jobs(isCancelling)');
-    console.log('Migration: Rebuilt jobs table with pdf/gif/clip job types');
+    console.log('Migration: Rebuilt jobs table with pdf/gif/clip/compress job types');
   }
 
   const columns = db.prepare("PRAGMA table_info(jobs)").all();

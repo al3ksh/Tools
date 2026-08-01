@@ -1,7 +1,7 @@
 -- Jobs table
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,
-  type TEXT NOT NULL CHECK(type IN ('download', 'convert', 'pdf', 'gif', 'clip')),
+  type TEXT NOT NULL CHECK(type IN ('download', 'convert', 'pdf', 'gif', 'clip', 'compress')),
   status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued', 'running', 'done', 'failed', 'expired', 'deleted')),
   progress INTEGER,
   createdAt TEXT NOT NULL,

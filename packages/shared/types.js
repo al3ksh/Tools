@@ -72,7 +72,8 @@ const JOB_TYPE = {
   CONVERT: 'convert',
   PDF: 'pdf',
   GIF: 'gif',
-  CLIP: 'clip'
+  CLIP: 'clip',
+  COMPRESS: 'compress'
 };
 
 module.exports = { PRESETS, JOB_STATUS, JOB_TYPE };

@@ -59,7 +59,7 @@ async function submitPdfJob(endpoint, formData, sessionId, fallbackError, option
   throw new Error('PDF job timed out');
 }
 
-async function submitGeneratedFileJob(endpoint, formData, sessionId, fallbackError, timeoutMs = 10 * 60 * 1000, options = {}) {
+async function submitGeneratedFileJob(endpoint, formData, sessionId, fallbackError, timeoutMs = 10 * 60 * 1000, options = {}, jobType = 'gif') {
   const response = await fetch(`${API_BASE}${endpoint}`, {
     method: 'POST',
     credentials: 'include',
@@ -76,7 +76,7 @@ async function submitGeneratedFileJob(endpoint, formData, sessionId, fallbackErr
 
   const startedAt = Date.now();
   if (options.onJobUpdate) {
-    options.onJobUpdate({ id: jobId, status: 'queued', progress: 0, type: 'gif', logsTail: 'Job queued' });
+    options.onJobUpdate({ id: jobId, status: 'queued', progress: 0, type: jobType, logsTail: 'Job queued' });
   }
   while (Date.now() - startedAt < timeoutMs) {
     await new Promise(resolve => setTimeout(resolve, 1500));
@@ -260,6 +260,16 @@ export const api = {
     });
 
     return submitGeneratedFileJob('/gif/process', formData, sessionId, 'GIF processing failed', 10 * 60 * 1000, callbacks);
+  },
+
+  compressFile: async (file, options = {}, sessionId, callbacks = {}) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('sessionId', sessionId);
+    Object.entries(options).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') formData.append(key, String(value));
+    });
+    return submitGeneratedFileJob('/compress', formData, sessionId, 'Compression failed', 30 * 60 * 1000, callbacks, 'compress');
   },
 
   // PDF

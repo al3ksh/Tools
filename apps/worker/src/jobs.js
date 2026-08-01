@@ -63,6 +63,18 @@ function createJobProcessor(context) {
     return filters.join(',');
   }
 
+  function parseFfmpegTime(text) {
+    const match = text.match(/time=(\d+):(\d+):(\d+)\.(\d+)/);
+    if (!match) return null;
+    return parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3]) + parseInt(match[4]) / 100;
+  }
+
+  function getOutputBaseName(originalName, suffix, ext) {
+    const parsed = path.parse(originalName || 'output');
+    const safeName = parsed.name.replace(/[^\w.-]+/g, '_').slice(0, 80) || 'output';
+    return `${safeName}_${suffix}.${ext}`;
+  }
+
   function parseChunkName(filename) {
     const match = filename.match(/^(\d+)-(\d+)\.chunk$/);
     if (!match) return null;
@@ -823,6 +835,181 @@ function createJobProcessor(context) {
     }
   }
 
+  async function processCompressJob(job) {
+    const input = JSON.parse(job.inputJson);
+    const { file, options = {}, isAdmin } = input;
+    const jobId = job.id;
+
+    if (!file || !file.path) {
+      finishWithError(jobId, 'No input file found');
+      return;
+    }
+
+    if (!checkDiskSpace(500)) {
+      finishWithError(jobId, 'Insufficient disk space on server');
+      return;
+    }
+
+    let inputPath;
+    try {
+      inputPath = safePath(DATA_DIR, file.path);
+    } catch (e) {
+      finishWithError(jobId, 'Invalid input path');
+      return;
+    }
+
+    if (!fs.existsSync(inputPath)) {
+      finishWithError(jobId, 'Input file not found');
+      return;
+    }
+
+    const kind = options.kind === 'image' ? 'image' : 'video';
+    const format = String(options.format || (kind === 'image' ? 'webp' : 'mp4')).toLowerCase();
+    const outputDir = safePath(DATA_DIR, path.join('converted', String(jobId)));
+    fs.mkdirSync(outputDir, { recursive: true });
+    const outputFilename = getOutputBaseName(file.originalName, 'compressed', format);
+    const outputPath = path.join(outputDir, outputFilename);
+    const targetMB = Number(options.targetMB) || 0;
+    const maxWidth = Number(options.maxWidth) || 0;
+    const quality = Math.min(Math.max(Number(options.quality) || 70, 1), 100);
+    const inputSize = Number(file.size) || (fs.existsSync(inputPath) ? fs.statSync(inputPath).size : 0);
+    const inputDuration = kind === 'video' ? getAudioDuration(inputPath) : 0;
+    const args = ['-y', '-i', inputPath];
+
+    if (kind === 'video') {
+      const filters = [];
+      if (maxWidth > 0) {
+        filters.push(`scale=w='min(${maxWidth},iw)':h=-2`);
+      }
+      if (filters.length > 0) args.push('-vf', filters.join(','));
+
+      if (format === 'webm') {
+        args.push('-c:v', 'libvpx-vp9');
+      } else {
+        args.push('-c:v', 'libx264', '-preset', 'veryfast', '-movflags', '+faststart');
+      }
+
+      if (targetMB > 0 && inputDuration > 0) {
+        const totalKbps = Math.max(Math.floor((targetMB * 8192) / inputDuration), 160);
+        const audioKbps = options.stripAudio ? 0 : Math.min(128, Math.max(64, Math.floor(totalKbps * 0.18)));
+        const videoKbps = Math.max(totalKbps - audioKbps, 120);
+        args.push('-b:v', `${videoKbps}k`, '-maxrate', `${Math.round(videoKbps * 1.35)}k`, '-bufsize', `${Math.round(videoKbps * 2)}k`);
+        if (targetMB > 1) args.push('-fs', String(Math.floor(targetMB * 1024 * 1024)));
+        if (options.stripAudio) {
+          args.push('-an');
+        } else {
+          args.push('-c:a', format === 'webm' ? 'libopus' : 'aac', '-b:a', `${audioKbps}k`);
+        }
+      } else {
+        const crf = Math.round(34 - (quality / 100) * 16);
+        args.push('-crf', String(crf));
+        if (options.stripAudio) {
+          args.push('-an');
+        } else {
+          args.push('-c:a', format === 'webm' ? 'libopus' : 'aac', '-b:a', '128k');
+        }
+      }
+    } else {
+      if (maxWidth > 0) {
+        args.push('-vf', `scale=w='min(${maxWidth},iw)':h=-2`);
+      }
+
+      if (format === 'png') {
+        args.push('-compression_level', quality >= 80 ? '6' : '9');
+      } else if (format === 'jpg' || format === 'jpeg') {
+        const q = Math.round(31 - (quality / 100) * 26);
+        args.push('-q:v', String(Math.min(Math.max(q, 2), 31)));
+      } else {
+        args.push('-c:v', 'libwebp', '-quality', String(quality), '-compression_level', '6');
+      }
+      args.push('-frames:v', '1');
+    }
+
+    args.push(outputPath);
+
+    return new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', args);
+      activeProcesses.set(jobId, ffmpeg);
+      let logsTail = '';
+      let lastProgressUpdate = 0;
+      let timedOut = false;
+
+      updateProgress(jobId, 8, 'Starting compression');
+
+      const processTimer = setTimeout(() => {
+        timedOut = true;
+        ffmpeg.kill('SIGKILL');
+        finishWithError(jobId, 'Compression timed out');
+      }, MAX_PROCESS_TIME);
+
+      ffmpeg.stderr.on('data', (data) => {
+        const text = data.toString();
+        logsTail += text;
+        if (logsTail.length > 5000) logsTail = logsTail.slice(-5000);
+
+        const current = parseFfmpegTime(text);
+        if (kind === 'video' && inputDuration > 0 && current != null && Date.now() - lastProgressUpdate >= 500) {
+          updateProgress(jobId, Math.min(Math.max(Math.round((current / inputDuration) * 90), 8), 95), logsTail);
+          lastProgressUpdate = Date.now();
+        } else if (kind === 'image' && Date.now() - lastProgressUpdate >= 500) {
+          updateProgress(jobId, 55, logsTail);
+          lastProgressUpdate = Date.now();
+        }
+      });
+
+      ffmpeg.on('close', (code, signal) => {
+        clearTimeout(processTimer);
+        activeProcesses.delete(jobId);
+        try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (e) {}
+
+        if (signal === 'SIGKILL') {
+          try { fs.rmSync(outputDir, { recursive: true, force: true }); } catch (e) {}
+          if (!timedOut) finishWithError(jobId, 'Cancelled by user');
+          resolve();
+          return;
+        }
+
+        if (code === 0 && fs.existsSync(outputPath)) {
+          try {
+            const stat = fs.statSync(outputPath);
+            updateProgress(jobId, 100, logsTail);
+            finishWithSuccess(jobId, {
+              files: [{
+                filename: outputFilename,
+                path: `converted/${jobId}/${outputFilename}`,
+                size: stat.size
+              }],
+              originalSize: inputSize,
+              compressedSize: stat.size,
+              savedBytes: Math.max(inputSize - stat.size, 0),
+              targetMB: targetMB || null,
+              kind,
+              format
+            }, isAdmin, job.sessionId);
+            resolve();
+          } catch (e) {
+            finishWithError(jobId, 'Failed to process compressed output');
+            reject(e);
+          }
+          return;
+        }
+
+        try { fs.rmSync(outputDir, { recursive: true, force: true }); } catch (e) {}
+        finishWithError(jobId, `ffmpeg exited with code ${code}: ${logsTail.slice(-1000)}`);
+        reject(new Error(`Process exited with code ${code}`));
+      });
+
+      ffmpeg.on('error', (err) => {
+        clearTimeout(processTimer);
+        activeProcesses.delete(jobId);
+        try { if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath); } catch (e) {}
+        try { fs.rmSync(outputDir, { recursive: true, force: true }); } catch (e) {}
+        finishWithError(jobId, `Failed to start ffmpeg: ${err.message}`);
+        reject(err);
+      });
+    });
+  }
+
   return async function processJob(job) {
     if (job.type === 'download') {
       return processDownloadJob(job);
@@ -834,6 +1021,8 @@ function createJobProcessor(context) {
       return processGifJob(job);
     } else if (job.type === 'clip') {
       return processClipJob(job);
+    } else if (job.type === 'compress') {
+      return processCompressJob(job);
     } else {
       throw new Error(`Unknown job type: ${job.type}`);
     }

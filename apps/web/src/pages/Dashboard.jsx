@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api, formatBytes, formatDate, getFileUrl } from '../api';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, FolderOpen, Clock, CheckCircle, XCircle, Zap, Download, FileAudio, Link as LinkIcon, Database, ClipboardList, Settings, Inbox, Archive } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, FolderOpen, Clock, CheckCircle, XCircle, Zap, Download, FileAudio, Link as LinkIcon, Database, ClipboardList, Settings, Inbox, Archive, PackageOpen } from 'lucide-react';
 import JobProgress from '../components/JobProgress';
 import Pagination from '../components/Pagination';
 
@@ -45,7 +45,8 @@ function Dashboard({ sessionId, isAdmin }) {
       convert: '/converter',
       pdf: '/pdf',
       gif: '/gif',
-      clip: '/clips'
+      clip: '/clips',
+      compress: '/compress'
     };
     return routes[type] || '/';
   }
@@ -135,6 +136,11 @@ function Dashboard({ sessionId, isAdmin }) {
                 <div className="quick-action-title">Convert Audio</div>
                 <div className="quick-action-desc">MP3, WAV, FLAC, Opus with normalization</div>
               </Link>
+              <Link to="/compress" className="quick-action">
+                <div className="quick-action-icon"><PackageOpen size={36} /></div>
+                <div className="quick-action-title">Compress Media</div>
+                <div className="quick-action-desc">Shrink videos and images for social upload limits</div>
+              </Link>
               <Link to="/shortener" className="quick-action">
                 <div className="quick-action-icon"><LinkIcon size={36} /></div>
                 <div className="quick-action-title">Shorten Link</div>
@@ -222,6 +228,7 @@ function Dashboard({ sessionId, isAdmin }) {
               <option value="pdf">PDF</option>
               <option value="gif">GIF</option>
               <option value="clip">Clips</option>
+              <option value="compress">Compressions</option>
             </select>
           </div>
           <div className="table-container">
@@ -249,6 +256,7 @@ function Dashboard({ sessionId, isAdmin }) {
                           <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--accent-text)' }}>
                             {job.type === 'download' ? <Download size={18} /> :
                               job.type === 'convert' ? <FileAudio size={18} /> :
+                                job.type === 'compress' ? <PackageOpen size={18} /> :
                                 job.type === 'shortener' ? <LinkIcon size={18} /> :
                                   <FolderOpen size={18} />}
                           </span>

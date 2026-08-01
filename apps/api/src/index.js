@@ -141,6 +141,7 @@ const qrRoutes = require('../routes/qr');
 const pdfRoutes = require('../routes/pdf');
 const gifRoutes = require('../routes/gif');
 const clipRoutes = require('../routes/clip');
+const compressRoutes = require('../routes/compress');
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -159,6 +160,7 @@ app.use('/api/qr', qrRoutes);
 app.use('/api/pdf', pdfRoutes);
 app.use('/api/gif', gifRoutes);
 app.use('/api/clip', clipRoutes);
+app.use('/api/compress', compressRoutes);
 
 // Redirect routes (shortener and drop)
 app.get('/s/:slug', redirectHandler);
