@@ -55,6 +55,8 @@ function Clips({ sessionId, isAdmin }) {
   const isSeekingRef = useRef(false);
   const timelineRef = useRef(null);
   const dragModeRef = useRef(null);
+  const regionDragRef = useRef(null);
+  const [timelineDragMode, setTimelineDragMode] = useState(null);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -62,7 +64,6 @@ function Clips({ sessionId, isAdmin }) {
   const [trimEnd, setTrimEnd] = useState(0);
   const [trimStartInput, setTrimStartInput] = useState('0:00');
   const [trimEndInput, setTrimEndInput] = useState('0:00');
-  const [seekValue, setSeekValue] = useState(null);
 
   const [myClipsPage, setMyClipsPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
@@ -71,6 +72,7 @@ function Clips({ sessionId, isAdmin }) {
   const trimEndPct = duration > 0 ? (Math.min(safeTrimEnd, duration) / duration) * 100 : 0;
   const playheadPct = duration > 0 ? (Math.min(currentTime, duration) / duration) * 100 : 0;
   const trimDuration = Math.max(safeTrimEnd - trimStart, 0);
+  const minTrimDuration = Math.min(0.15, Math.max(duration / 100, 0.05));
 
   const fetchClips = async () => {
     try {
@@ -144,8 +146,15 @@ function Clips({ sessionId, isAdmin }) {
     return Math.min(Math.max(value, 0), duration);
   };
 
+  const snapTimelineTime = (value) => {
+    const next = clampTrimTime(value);
+    if (next < 0.12) return 0;
+    if (duration - next < 0.12) return duration;
+    return Math.round(next * 100) / 100;
+  };
+
   const syncTrimStart = (value) => {
-    const next = Math.min(clampTrimTime(value), Math.max(safeTrimEnd - 0.05, 0));
+    const next = Math.min(snapTimelineTime(value), Math.max(safeTrimEnd - minTrimDuration, 0));
     setTrimStart(next);
     setTrimStartInput(formatTime(next));
     if (videoRef.current) videoRef.current.currentTime = next;
@@ -153,7 +162,7 @@ function Clips({ sessionId, isAdmin }) {
   };
 
   const syncTrimEnd = (value) => {
-    const next = Math.max(clampTrimTime(value), Math.min(trimStart + 0.05, duration));
+    const next = Math.max(snapTimelineTime(value), Math.min(trimStart + minTrimDuration, duration));
     setTrimEnd(next);
     setTrimEndInput(formatTime(next));
     if (videoRef.current) videoRef.current.currentTime = next;
@@ -174,9 +183,20 @@ function Clips({ sessionId, isAdmin }) {
   };
 
   const seekVideo = (time) => {
-    const next = clampTrimTime(time);
+    const next = snapTimelineTime(time);
     if (videoRef.current) videoRef.current.currentTime = next;
     setCurrentTime(next);
+  };
+
+  const getTimelineMode = (clientX) => {
+    if (!timelineRef.current || !duration || duration <= 0) return 'seek';
+    const t = timeFromPointer(clientX);
+    const pxPerSec = timelineRef.current.getBoundingClientRect().width / duration;
+    const handleRadius = Math.max(14 / pxPerSec, 0.08);
+    if (Math.abs(t - trimStart) <= handleRadius) return 'start';
+    if (Math.abs(t - safeTrimEnd) <= handleRadius) return 'end';
+    if (t > trimStart && t < safeTrimEnd) return 'region';
+    return 'seek';
   };
 
   const updateTimelineDrag = (clientX) => {
@@ -187,6 +207,33 @@ function Clips({ sessionId, isAdmin }) {
       syncTrimStart(time);
     } else if (mode === 'end') {
       syncTrimEnd(time);
+    } else if (mode === 'region' && regionDragRef.current) {
+      const rect = timelineRef.current.getBoundingClientRect();
+      const startRatio = rect.width > 0 ? (regionDragRef.current.mouseX - rect.left) / rect.width : 0;
+      const currentRatio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
+      const delta = (currentRatio - startRatio) * duration;
+      const length = regionDragRef.current.end - regionDragRef.current.start;
+      let nextStart = regionDragRef.current.start + delta;
+      let nextEnd = regionDragRef.current.end + delta;
+
+      if (nextStart < 0) {
+        nextStart = 0;
+        nextEnd = length;
+      }
+      if (nextEnd > duration) {
+        nextEnd = duration;
+        nextStart = Math.max(0, duration - length);
+      }
+
+      nextStart = snapTimelineTime(nextStart);
+      nextEnd = snapTimelineTime(nextEnd);
+      if (nextEnd - nextStart < minTrimDuration) return;
+
+      setTrimStart(nextStart);
+      setTrimEnd(nextEnd);
+      setTrimStartInput(formatTime(nextStart));
+      setTrimEndInput(formatTime(nextEnd));
+      seekVideo(nextStart);
     } else {
       seekVideo(time);
     }
@@ -195,8 +242,17 @@ function Clips({ sessionId, isAdmin }) {
   const beginTimelineDrag = (mode, e) => {
     e.preventDefault();
     e.stopPropagation();
-    dragModeRef.current = mode;
-    updateTimelineDrag(getPointerX(e));
+    const clientX = getPointerX(e);
+    const resolvedMode = mode || getTimelineMode(clientX);
+    dragModeRef.current = resolvedMode;
+    setTimelineDragMode(resolvedMode);
+    if (resolvedMode === 'region') {
+      regionDragRef.current = { mouseX: clientX, start: trimStart, end: safeTrimEnd };
+      seekVideo(trimStart);
+      return;
+    }
+    regionDragRef.current = null;
+    updateTimelineDrag(clientX);
   };
 
   useEffect(() => {
@@ -207,6 +263,8 @@ function Clips({ sessionId, isAdmin }) {
     };
     const onUp = () => {
       dragModeRef.current = null;
+      regionDragRef.current = null;
+      setTimelineDragMode(null);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -220,25 +278,12 @@ function Clips({ sessionId, isAdmin }) {
       window.removeEventListener('touchend', onUp);
       window.removeEventListener('touchcancel', onUp);
     };
-  }, [duration, trimStart, safeTrimEnd]);
+  }, [duration, trimStart, safeTrimEnd, minTrimDuration]);
 
   const handleVideoSeeked = () => {
     isSeekingRef.current = false;
-    setSeekValue(null);
     if (videoRef.current) {
       setCurrentTime(videoRef.current.currentTime || 0);
-    }
-  };
-
-  const handleSeek = (e) => {
-    isSeekingRef.current = true;
-    const time = parseFloat(e.target.value);
-    setSeekValue(time);
-  };
-
-  const handleSeeked = () => {
-    if (videoRef.current && seekValue !== null) {
-      videoRef.current.currentTime = seekValue;
     }
   };
 
@@ -384,54 +429,80 @@ function Clips({ sessionId, isAdmin }) {
                     />
                   </div>
 
-                  <div style={{ marginBottom: '12px' }}>
-                    <input
-                      type="range"
-                      min={0}
-                      max={duration || 0}
-                      step={0.01}
-                      value={seekValue !== null ? seekValue : currentTime}
-                      onChange={handleSeek}
-                      onMouseUp={handleSeeked}
-                      onTouchEnd={handleSeeked}
-                      style={{ width: '100%' }}
-                    />
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                      <span>{formatTime(currentTime)}</span>
-                      <span>{formatTime(duration)}</span>
-                    </div>
-                  </div>
-
                   {duration > 0 && (
                     <div style={{
                       border: '1px solid var(--border)',
                       borderRadius: '8px',
-                      padding: '10px',
+                      padding: '12px',
                       background: 'var(--bg)',
                       marginBottom: '12px'
                     }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '10px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          Playhead <strong style={{ color: 'var(--text-primary)' }}>{formatTime(currentTime)}</strong>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => syncTrimStart(currentTime)}>
+                            Set start here
+                          </button>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => syncTrimEnd(currentTime)}>
+                            Set end here
+                          </button>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
+                            syncTrimStart(0);
+                            syncTrimEnd(duration);
+                            seekVideo(0);
+                          }}>
+                            Full video
+                          </button>
+                        </div>
+                      </div>
                       <div
                         ref={timelineRef}
                         style={{
                           position: 'relative',
-                          height: '56px',
-                          borderRadius: '6px',
+                          height: '64px',
+                          borderRadius: '8px',
                           background: 'var(--bg-secondary)',
-                          overflow: 'hidden',
-                          cursor: 'pointer'
+                          overflow: 'visible',
+                          cursor: timelineDragMode === 'region' ? 'grabbing' : 'pointer',
+                          userSelect: 'none'
                         }}
-                        onMouseDown={(e) => beginTimelineDrag('seek', e)}
-                        onTouchStart={(e) => beginTimelineDrag('seek', e)}
+                        onMouseDown={(e) => {
+                          if (e.button !== 0) return;
+                          beginTimelineDrag(null, e);
+                        }}
+                        onTouchStart={(e) => beginTimelineDrag(null, e)}
                       >
                         <div style={{
                           position: 'absolute',
                           top: 0,
                           bottom: 0,
+                          left: 0,
+                          width: `${trimStartPct}%`,
+                          background: 'rgba(0,0,0,0.28)',
+                          pointerEvents: 'none'
+                        }} />
+                        <div style={{
+                          position: 'absolute',
+                          top: 0,
+                          bottom: 0,
+                          left: `${trimEndPct}%`,
+                          right: 0,
+                          background: 'rgba(0,0,0,0.28)',
+                          pointerEvents: 'none'
+                        }} />
+                        <div style={{
+                          position: 'absolute',
+                          top: '8px',
+                          bottom: '8px',
                           left: `${trimStartPct}%`,
                           width: `${Math.max(trimEndPct - trimStartPct, 0)}%`,
                           background: 'rgba(52, 152, 219, 0.28)',
-                          borderLeft: '2px solid var(--accent)',
-                          borderRight: '2px solid var(--accent)'
+                          border: '1px solid rgba(52, 152, 219, 0.75)',
+                          borderRadius: '7px',
+                          boxShadow: timelineDragMode === 'region' ? '0 0 0 2px rgba(52, 152, 219, 0.35)' : 'none',
+                          cursor: 'grab'
                         }} />
                         <div style={{
                           position: 'absolute',
@@ -450,6 +521,15 @@ function Clips({ sessionId, isAdmin }) {
                         }}>
                           {formatTime(trimDuration)}
                         </div>
+                        <div style={{
+                          position: 'absolute',
+                          top: '8px',
+                          bottom: '8px',
+                          left: `${trimStartPct}%`,
+                          width: `${Math.max(trimEndPct - trimStartPct, 0)}%`,
+                          cursor: 'grab',
+                          zIndex: 1
+                        }} />
                         <button
                           type="button"
                           onMouseDown={(e) => beginTimelineDrag('start', e)}
@@ -457,22 +537,23 @@ function Clips({ sessionId, isAdmin }) {
                           title="Trim start"
                           style={{
                             position: 'absolute',
-                            top: 0,
-                            bottom: 0,
+                            top: '6px',
+                            bottom: '6px',
                             left: `${trimStartPct}%`,
-                            width: '26px',
-                            marginLeft: '-13px',
+                            width: '34px',
+                            marginLeft: '-17px',
                             border: 'none',
-                            borderRadius: '3px',
+                            borderRadius: '6px',
                             background: 'var(--accent)',
                             cursor: 'ew-resize',
-                            zIndex: 2,
+                            zIndex: 4,
                             color: '#fff',
                             fontSize: '10px',
-                            fontWeight: 700
+                            fontWeight: 700,
+                            boxShadow: timelineDragMode === 'start' ? '0 0 0 3px rgba(52, 152, 219, 0.35)' : '0 2px 8px rgba(0,0,0,0.25)'
                           }}
                         >
-                          S
+                          <span style={{ display: 'block', lineHeight: 1 }}>IN</span>
                         </button>
                         <button
                           type="button"
@@ -481,38 +562,53 @@ function Clips({ sessionId, isAdmin }) {
                           title="Trim end"
                           style={{
                             position: 'absolute',
-                            top: 0,
-                            bottom: 0,
+                            top: '6px',
+                            bottom: '6px',
                             left: `${trimEndPct}%`,
-                            width: '26px',
-                            marginLeft: '-13px',
+                            width: '34px',
+                            marginLeft: '-17px',
                             border: 'none',
-                            borderRadius: '3px',
+                            borderRadius: '6px',
                             background: 'var(--accent)',
                             cursor: 'ew-resize',
-                            zIndex: 2,
+                            zIndex: 4,
                             color: '#fff',
                             fontSize: '10px',
-                            fontWeight: 700
+                            fontWeight: 700,
+                            boxShadow: timelineDragMode === 'end' ? '0 0 0 3px rgba(52, 152, 219, 0.35)' : '0 2px 8px rgba(0,0,0,0.25)'
                           }}
                         >
-                          E
+                          <span style={{ display: 'block', lineHeight: 1 }}>OUT</span>
                         </button>
                         <div style={{
                           position: 'absolute',
-                          top: 0,
-                          bottom: 0,
+                          top: '4px',
+                          bottom: '4px',
                           left: `${playheadPct}%`,
                           width: '2px',
                           background: '#fff',
                           boxShadow: '0 0 0 1px rgba(0,0,0,0.25)',
                           pointerEvents: 'none',
-                          zIndex: 3
-                        }} />
+                          zIndex: 5
+                        }}>
+                          <div style={{
+                            position: 'absolute',
+                            top: '-1px',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            width: 0,
+                            height: 0,
+                            borderLeft: '5px solid transparent',
+                            borderRight: '5px solid transparent',
+                            borderTop: '7px solid #fff'
+                          }} />
+                        </div>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '6px' }}>
+                        <span>0:00</span>
                         <span>Start {formatTime(trimStart)}</span>
                         <span>End {formatTime(safeTrimEnd)}</span>
+                        <span>{formatTime(duration)}</span>
                       </div>
                     </div>
                   )}
