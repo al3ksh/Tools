@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   type TEXT NOT NULL CHECK(type IN ('download', 'convert', 'pdf', 'gif', 'clip', 'compress')),
   status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued', 'running', 'done', 'failed', 'expired', 'deleted')),
   progress INTEGER,
+  priority INTEGER NOT NULL DEFAULT 0,
   createdAt TEXT NOT NULL,
   startedAt TEXT,
   finishedAt TEXT,

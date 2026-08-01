@@ -8,6 +8,7 @@ const DB_PATH = path.join(DATA_DIR, 'tools.db');
 const POLL_INTERVAL = 1000;
 const MAX_PROCESS_TIME = 30 * 60 * 1000;
 const DB_SCHEMA_WAIT_MS = parseInt(process.env.DB_SCHEMA_WAIT_MS || '60000', 10);
+const MAX_CONCURRENT_JOBS = Math.max(1, Math.min(parseInt(process.env.MAX_CONCURRENT_JOBS || '1', 10) || 1, 4));
 
 function safePath(baseDir, relativePath) {
   const resolved = path.resolve(baseDir, relativePath);
@@ -71,7 +72,7 @@ const activeProcesses = new Map();
 
 const claimNextJob = db.prepare(`
   UPDATE jobs SET status = 'running', startedAt = ? 
-  WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND isCancelling = 0 ORDER BY createdAt ASC LIMIT 1)
+  WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND isCancelling = 0 ORDER BY priority DESC, createdAt ASC LIMIT 1)
   RETURNING *
 `);
 
@@ -156,33 +157,44 @@ const processJob = createJobProcessor({
 });
 
 let shuttingDown = false;
-let processing = false;
+let claimingJobs = false;
+const activeJobIds = new Set();
 
-async function pollAndProcess() {
-  if (shuttingDown || processing) return;
-  processing = true;
+async function runClaimedJob(job) {
+  activeJobIds.add(job.id);
+  console.log(`Processing job ${job.id} (type: ${job.type})`);
   try {
-    const job = claimNextJob.get(new Date().toISOString());
+    updateProgress(job.id, Math.max(job.progress || 0, 8), 'Worker slot assigned');
+    await processJob(job);
+    console.log(`Job ${job.id} completed`);
+  } catch (err) {
+    console.error(`Job ${job.id} failed:`, err.message);
+    finishWithError(job.id, err.message || 'Job failed');
+  } finally {
+    activeJobIds.delete(job.id);
+  }
+}
 
-    if (job) {
-      console.log(`Processing job ${job.id} (type: ${job.type})`);
-      try {
-        await processJob(job);
-        console.log(`Job ${job.id} completed`);
-      } catch (err) {
-        console.error(`Job ${job.id} failed:`, err.message);
-      }
+function pollAndProcess() {
+  if (shuttingDown || claimingJobs) return;
+  claimingJobs = true;
+  try {
+    while (activeJobIds.size < MAX_CONCURRENT_JOBS) {
+      const job = claimNextJob.get(new Date().toISOString());
+      if (!job) break;
+      runClaimedJob(job);
     }
   } catch (err) {
     console.error('Polling error:', err);
   } finally {
-    processing = false;
+    claimingJobs = false;
   }
 }
 
 console.log('Worker starting...');
 console.log(`Data directory: ${DATA_DIR}`);
 console.log(`Database: ${DB_PATH}`);
+console.log(`Max concurrent jobs: ${MAX_CONCURRENT_JOBS}`);
 
 async function cleanupExpiredJobs() {
   try {

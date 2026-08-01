@@ -69,6 +69,16 @@ function AdminPanel() {
         }
     };
 
+    const handleJobPriority = async (job, delta) => {
+        try {
+            await api.setJobPriority(job.id, (job.priority || 0) + delta);
+            showToast('Job priority updated');
+            fetchAll();
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    };
+
     const handleDeleteDrop = async (token) => {
         try {
             await api.deleteDrop(token);
@@ -183,6 +193,7 @@ function AdminPanel() {
                                         <tr>
                                             <th>Type</th>
                                             <th>Status</th>
+                                            <th>Priority</th>
                                             <th>Input</th>
                                             <th>Session</th>
                                             <th>Created</th>
@@ -201,7 +212,33 @@ function AdminPanel() {
                                                 <td>
                                                     <span className={`status-badge status-${job.status}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                                                         {STATUS_ICONS[job.status]} {job.status}
+                                                        {job.queuePosition ? ` #${job.queuePosition}` : ''}
                                                     </span>
+                                                </td>
+                                                <td>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                        <span style={{ minWidth: '24px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                                                            {job.priority || 0}
+                                                        </span>
+                                                        {job.status === 'queued' && (
+                                                            <>
+                                                                <button
+                                                                    className="btn btn-secondary btn-sm"
+                                                                    onClick={() => handleJobPriority(job, 1)}
+                                                                    title="Increase priority"
+                                                                >
+                                                                    +
+                                                                </button>
+                                                                <button
+                                                                    className="btn btn-secondary btn-sm"
+                                                                    onClick={() => handleJobPriority(job, -1)}
+                                                                    title="Decrease priority"
+                                                                >
+                                                                    -
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '12px' }}>
                                                     {job.inputJson?.url || (typeof job.inputJson?.source === 'string' ? job.inputJson.source : job.inputJson?.source?.originalName) || '-'}

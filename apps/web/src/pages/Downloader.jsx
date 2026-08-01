@@ -356,7 +356,7 @@ function Downloader({ sessionId }) {
                           )}
                         </td>
                         <td>
-                          <StatusBadge status={job.status} />
+                          <StatusBadge status={job.status} queuePosition={job.queuePosition} />
                         </td>
                         <td>
                           <JobProgress

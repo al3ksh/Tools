@@ -10,6 +10,24 @@ function checkJobOwnership(job, sessionId, isAdmin) {
   return job.sessionId === sessionId;
 }
 
+function buildQueuePositions() {
+  const positions = new Map();
+  const queued = statements.getQueuedJobIds.all();
+  queued.forEach((job, index) => {
+    positions.set(job.id, index + 1);
+  });
+  return positions;
+}
+
+function serializeJob(job, queuePositions) {
+  return {
+    ...job,
+    queuePosition: job.status === 'queued' ? queuePositions.get(job.id) || null : null,
+    inputJson: job.inputJson ? JSON.parse(job.inputJson) : null,
+    outputJson: job.outputJson ? JSON.parse(job.outputJson) : null
+  };
+}
+
 // GET /api/jobs - recent 50 jobs (filtered by session)
 router.get('/', (req, res) => {
   try {
@@ -23,11 +41,8 @@ router.get('/', (req, res) => {
     } else {
       jobs = [];
     }
-    res.json(jobs.map(job => ({
-      ...job,
-      inputJson: job.inputJson ? JSON.parse(job.inputJson) : null,
-      outputJson: job.outputJson ? JSON.parse(job.outputJson) : null
-    })));
+    const queuePositions = buildQueuePositions();
+    res.json(jobs.map(job => serializeJob(job, queuePositions)));
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -39,11 +54,8 @@ router.get('/:id', (req, res) => {
     const job = statements.getJobById.get(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     if (!checkJobOwnership(job, req.query.sessionId, req.isAdmin)) return res.status(403).json({ error: 'Access denied' });
-    res.json({
-      ...job,
-      inputJson: job.inputJson ? JSON.parse(job.inputJson) : null,
-      outputJson: job.outputJson ? JSON.parse(job.outputJson) : null
-    });
+    const queuePositions = buildQueuePositions();
+    res.json(serializeJob(job, queuePositions));
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -82,6 +94,29 @@ router.post('/:id/cancel', (req, res) => {
 
     statements.cancelJob.run(req.params.id);
     res.json({ success: true, message: 'Job cancellation requested' });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PATCH /api/jobs/:id/priority - adjust queued job priority (admin only)
+router.patch('/:id/priority', (req, res) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+
+    const job = statements.getJobById.get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (job.status !== 'queued') return res.status(400).json({ error: 'Only queued jobs can be reprioritized' });
+
+    const priority = Number(req.body.priority);
+    if (!Number.isInteger(priority) || priority < -100 || priority > 100) {
+      return res.status(400).json({ error: 'Priority must be an integer between -100 and 100' });
+    }
+
+    statements.updateJobPriority.run(priority, req.params.id);
+    const updated = statements.getJobById.get(req.params.id);
+    const queuePositions = buildQueuePositions();
+    res.json(serializeJob(updated, queuePositions));
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }

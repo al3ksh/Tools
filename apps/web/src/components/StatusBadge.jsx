@@ -9,13 +9,14 @@ const STATUS_CONFIG = {
   deleted: { icon: Trash2, label: 'Deleted', className: 'status-deleted' },
 };
 
-function StatusBadge({ status, size = 14 }) {
+function StatusBadge({ status, queuePosition, size = 14 }) {
   const config = STATUS_CONFIG[status];
   if (!config) return null;
   const Icon = config.icon;
+  const label = status === 'queued' && queuePosition ? `${config.label} #${queuePosition}` : config.label;
   return (
     <span className={`status-badge ${config.className}`}>
-      <Icon size={size} /> {config.label}
+      <Icon size={size} /> {label}
     </span>
   );
 }

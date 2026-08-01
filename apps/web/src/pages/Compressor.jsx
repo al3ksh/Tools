@@ -280,7 +280,7 @@ function Compressor({ sessionId, isAdmin }) {
                             {output.compressedSize ? ` -> ${formatBytes(output.compressedSize)}` : ''}
                           </div>
                         </td>
-                        <td><StatusBadge status={job.status} /></td>
+                        <td><StatusBadge status={job.status} queuePosition={job.queuePosition} /></td>
                         <td><JobProgress job={job} title="Progress" compact /></td>
                         <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{formatDate(job.createdAt)}</td>
                         <td>

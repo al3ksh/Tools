@@ -30,6 +30,7 @@ try {
   if (!preflightColumns.includes('deleted')) db.exec('ALTER TABLE jobs ADD COLUMN deleted INTEGER DEFAULT 0');
   if (!preflightColumns.includes('sessionId')) db.exec('ALTER TABLE jobs ADD COLUMN sessionId TEXT');
   if (!preflightColumns.includes('isCancelling')) db.exec('ALTER TABLE jobs ADD COLUMN isCancelling INTEGER DEFAULT 0');
+  if (!preflightColumns.includes('priority')) db.exec('ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
 
   const jobsCreateSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'").get()?.sql || '';
   if (jobsCreateSql && (!jobsCreateSql.includes("'pdf'") || !jobsCreateSql.includes("'gif'") || !jobsCreateSql.includes("'clip'") || !jobsCreateSql.includes("'compress'"))) {
@@ -40,6 +41,7 @@ try {
           type TEXT NOT NULL CHECK(type IN ('download', 'convert', 'pdf', 'gif', 'clip', 'compress')),
           status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued', 'running', 'done', 'failed', 'expired', 'deleted')),
           progress INTEGER,
+          priority INTEGER NOT NULL DEFAULT 0,
           createdAt TEXT NOT NULL,
           startedAt TEXT,
           finishedAt TEXT,
@@ -55,14 +57,15 @@ try {
         )
       `);
       db.exec(`
-        INSERT INTO jobs_new (id, type, status, progress, createdAt, startedAt, finishedAt, expiresAt, deletedAt, deleted, sessionId, inputJson, outputJson, error, logsTail, isCancelling)
-        SELECT id, type, status, progress, createdAt, startedAt, finishedAt, expiresAt, deletedAt, deleted, sessionId, inputJson, outputJson, error, logsTail, isCancelling
+        INSERT INTO jobs_new (id, type, status, progress, priority, createdAt, startedAt, finishedAt, expiresAt, deletedAt, deleted, sessionId, inputJson, outputJson, error, logsTail, isCancelling)
+        SELECT id, type, status, progress, COALESCE(priority, 0), createdAt, startedAt, finishedAt, expiresAt, deletedAt, deleted, sessionId, inputJson, outputJson, error, logsTail, isCancelling
         FROM jobs
       `);
       db.exec('DROP TABLE jobs');
       db.exec('ALTER TABLE jobs_new RENAME TO jobs');
     })();
     db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, createdAt)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(status, priority, createdAt)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_expires ON jobs(expiresAt, status)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_session ON jobs(sessionId)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_type ON jobs(type)');
@@ -91,6 +94,12 @@ try {
   if (!columnNames.includes('isCancelling')) {
     db.exec('ALTER TABLE jobs ADD COLUMN isCancelling INTEGER DEFAULT 0');
     console.log('Migration: Added isCancelling column');
+  }
+
+  if (!columnNames.includes('priority')) {
+    db.exec('ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(status, priority, createdAt)');
+    console.log('Migration: Added priority column');
   }
 
   const dropColumns = db.prepare("PRAGMA table_info(drops)").all();
@@ -144,6 +153,8 @@ try {
     try { db.exec('CREATE INDEX IF NOT EXISTS idx_shortlinks_expires ON shortlinks(expiresAt, deleted)'); } catch (e) {}
   }
 
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(status, priority, createdAt)'); } catch (e) {}
+
   // Clips table migration
   const clipColumns = db.prepare("PRAGMA table_info(clips)").all();
   const clipColumnNames = clipColumns.map(c => c.name);
@@ -194,6 +205,14 @@ const statements = {
     SELECT * FROM jobs WHERE sessionId = ? AND deleted = 0 ORDER BY createdAt DESC LIMIT ?
   `),
 
+  getQueuedJobIds: db.prepare(`
+    SELECT id FROM jobs WHERE status = 'queued' AND isCancelling = 0 AND deleted = 0 ORDER BY priority DESC, createdAt ASC
+  `),
+
+  updateJobPriority: db.prepare(`
+    UPDATE jobs SET priority = ? WHERE id = ? AND status = 'queued' AND deleted = 0
+  `),
+
   updateJobStatus: db.prepare(`
     UPDATE jobs SET status = ?, startedAt = ? WHERE id = ?
   `),
@@ -228,7 +247,7 @@ const statements = {
 
   claimNextJob: db.prepare(`
     UPDATE jobs SET status = 'running', startedAt = ? 
-    WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND isCancelling = 0 ORDER BY createdAt ASC LIMIT 1)
+    WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND isCancelling = 0 ORDER BY priority DESC, createdAt ASC LIMIT 1)
     RETURNING *
   `),
 

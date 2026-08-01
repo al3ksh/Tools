@@ -121,6 +121,10 @@ export const api = {
   getJob: (id, sessionId) => fetchApi(`/jobs/${id}${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`),
   deleteJob: (id, sessionId) => fetchApi(`/jobs/${id}${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`, { method: 'DELETE' }),
   cancelJob: (id, sessionId) => fetchApi(`/jobs/${id}/cancel${sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : ''}`, { method: 'POST' }),
+  setJobPriority: (id, priority) => fetchApi(`/jobs/${id}/priority`, {
+    method: 'PATCH',
+    body: JSON.stringify({ priority })
+  }),
 
   // Downloader
   createDownloadJob: (url, preset, sessionId, options = {}) => fetchApi('/downloader', {

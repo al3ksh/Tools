@@ -48,6 +48,7 @@ services:
     environment:
       - DATA_DIR=/data
       - NODE_OPTIONS=--max-old-space-size=1024
+      - MAX_CONCURRENT_JOBS=1
     depends_on:
       api:
         condition: service_healthy

@@ -328,7 +328,7 @@ function Converter({ sessionId, isAdmin }) {
                         <td>{(input.options?.format || input.format || '-').toUpperCase()}</td>
                         <td>{input.options ? (input.options.normalize?.enabled ? `${input.options.normalize.targetLufs} LUFS` : 'None') : (input.preset || '-')}</td>
                         <td>
-                          <StatusBadge status={job.status} />
+                          <StatusBadge status={job.status} queuePosition={job.queuePosition} />
                         </td>
                         <td style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
                           {formatDate(job.createdAt)}
