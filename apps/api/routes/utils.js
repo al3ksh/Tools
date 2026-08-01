@@ -240,7 +240,7 @@ router.get('/preview', async (req, res) => {
     clearTimeout(timeoutId);
 
     if (response.statusCode >= 300 && response.statusCode < 400) {
-      return res.status(400).json({ error: 'Redirected URLs are not supported' });
+      return res.json({ image: null });
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
