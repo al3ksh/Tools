@@ -163,33 +163,13 @@ export const api = {
   getShortlinks: (sessionId) => fetchApi(`/shortlinks/list${sessionId ? `?sessionId=${sessionId}` : ''}`),
 
   // Drop
-  uploadDrop: (file, sessionId, password, onProgress) => {
-    return new Promise((resolve, reject) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      if (sessionId) formData.append('sessionId', sessionId);
-      if (password) formData.append('password', password);
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_BASE}/drop/upload`);
-      xhr.withCredentials = true;
-      if (onProgress) {
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-        });
-      }
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try { resolve(JSON.parse(xhr.responseText)); }
-          catch (e) { reject(new Error('Upload failed')); }
-        } else {
-          try { reject(new Error(JSON.parse(xhr.responseText).error || 'Upload failed')); }
-          catch (e) { reject(new Error('Upload failed')); }
-        }
-      };
-      xhr.onerror = () => reject(new Error('Network error'));
-      xhr.send(formData);
-    });
-  },
+  uploadDrop: (file, sessionId, password, onProgress, onPhase) => uploadDropChunks(
+    file,
+    sessionId,
+    password,
+    onProgress,
+    onPhase
+  ),
 
   getDrops: (sessionId) => fetchApi(`/drop/list${sessionId ? `?sessionId=${sessionId}` : ''}`),
   getDropInfo: (token) => fetchApi(`/drop/${token}/info`),
@@ -384,7 +364,8 @@ export const getClipStreamUrl = (token) => `/api/clip/${token}/stream`;
 
 export const getClipEmbedUrl = (token) => `/c/${token}/embed`;
 
-const CHUNK_SIZE = 5 * 1024 * 1024;
+const CLIP_CHUNK_SIZE = 5 * 1024 * 1024;
+const DROP_CHUNK_SIZE = 16 * 1024 * 1024;
 const MAX_CHUNK_RETRIES = 3;
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -392,12 +373,12 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 export async function uploadChunks(file, onProgress) {
   const uploadId = crypto.randomUUID();
 
-  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  const totalChunks = Math.ceil(file.size / CLIP_CHUNK_SIZE);
   let uploadedChunks = 0;
 
   for (let i = 0; i < totalChunks; i++) {
-    const start = i * CHUNK_SIZE;
-    const end = Math.min(start + CHUNK_SIZE - 1, file.size - 1);
+    const start = i * CLIP_CHUNK_SIZE;
+    const end = Math.min(start + CLIP_CHUNK_SIZE - 1, file.size - 1);
     const blob = file.slice(start, end + 1);
 
     for (let attempt = 0; attempt <= MAX_CHUNK_RETRIES; attempt++) {
@@ -440,6 +421,130 @@ export async function uploadChunks(file, onProgress) {
   }
 
   return uploadId;
+}
+
+function parseUploadError(xhr, fallback) {
+  try {
+    const response = JSON.parse(xhr.responseText);
+    return response.error || fallback;
+  } catch (e) {
+    if (xhr.status === 413) return 'Upload was rejected because a request was too large.';
+    if (xhr.status === 429) return 'Server is receiving too many uploads. Retrying shortly.';
+    return fallback;
+  }
+}
+
+function sendDropChunk(uploadId, sessionId, file, start, end, onProgress) {
+  return new Promise((resolve, reject) => {
+    const blob = file.slice(start, end + 1);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE}/drop/upload-chunk`);
+    xhr.withCredentials = true;
+    xhr.timeout = 4 * 60 * 1000;
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.setRequestHeader('X-Upload-Id', uploadId);
+    xhr.setRequestHeader('X-Session-Id', sessionId);
+    xhr.setRequestHeader('Content-Range', `bytes ${start}-${end}/${file.size}`);
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (!event.lengthComputable || !onProgress) return;
+      const uploadedBytes = Math.min(start + event.loaded, file.size);
+      onProgress({
+        percent: Math.min(99, Math.round((uploadedBytes / file.size) * 100)),
+        uploadedBytes,
+        totalBytes: file.size
+      });
+    });
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+      const error = new Error(parseUploadError(xhr, 'Upload chunk failed'));
+      error.status = xhr.status;
+      reject(error);
+    };
+    xhr.onerror = () => {
+      const error = new Error('Upload interrupted. Check your connection.');
+      error.status = 0;
+      reject(error);
+    };
+    xhr.ontimeout = () => {
+      const error = new Error('Upload chunk timed out. Check your connection.');
+      error.status = 408;
+      reject(error);
+    };
+    xhr.send(blob);
+  });
+}
+
+async function finalizeDropUpload(uploadId, file, sessionId, password) {
+  const response = await fetch(`${API_BASE}/drop/finalize`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uploadId, filename: file.name, sessionId, password })
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const error = new Error(data.error || 'Failed to finalize upload');
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+}
+
+async function uploadDropChunks(file, sessionId, password, onProgress, onPhase) {
+  if (!sessionId) throw new Error('Missing browser session. Refresh the page and try again.');
+  if (!file || file.size <= 0) throw new Error('The selected file is empty.');
+
+  const uploadId = crypto.randomUUID();
+  if (onPhase) onPhase('uploading');
+
+  for (let start = 0; start < file.size; start += DROP_CHUNK_SIZE) {
+    const end = Math.min(start + DROP_CHUNK_SIZE - 1, file.size - 1);
+
+    for (let attempt = 0; attempt <= MAX_CHUNK_RETRIES; attempt++) {
+      try {
+        await sendDropChunk(uploadId, sessionId, file, start, end, onProgress);
+        break;
+      } catch (error) {
+        const retryable = error.status === 0 || error.status === 408 || error.status === 409
+          || error.status === 429 || error.status >= 500;
+        if (!retryable || attempt === MAX_CHUNK_RETRIES) throw error;
+        if (onPhase) onPhase('retrying');
+        await delay(750 * 2 ** attempt);
+        if (onPhase) onPhase('uploading');
+      }
+    }
+
+    if (onProgress) {
+      const uploadedBytes = end + 1;
+      onProgress({
+        percent: Math.min(99, Math.round((uploadedBytes / file.size) * 100)),
+        uploadedBytes,
+        totalBytes: file.size
+      });
+    }
+  }
+
+  if (onPhase) onPhase('finalizing');
+  if (onProgress) onProgress({ percent: 100, uploadedBytes: file.size, totalBytes: file.size });
+
+  for (let attempt = 0; attempt <= MAX_CHUNK_RETRIES; attempt++) {
+    try {
+      return await finalizeDropUpload(uploadId, file, sessionId, password);
+    } catch (error) {
+      const retryable = error.status === 408 || error.status === 409 || error.status === 429 || error.status >= 500;
+      if (!retryable || attempt === MAX_CHUNK_RETRIES) throw error;
+      await delay(750 * 2 ** attempt);
+    }
+  }
+
+  throw new Error('Failed to finalize upload');
 }
 
 export async function finalizeUpload(uploadId, filename, sessionId, trimOptions, callbacks = {}) {

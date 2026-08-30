@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { UploadCloud, File as FileIcon, X, CheckCircle } from 'lucide-react';
 import { formatBytes } from '../api';
 
-function FileUploader({ onFileSelect, maxSizeMB = 50, accept = "*", selectedFile = null, noLimit = false, multiple = false }) {
+function FileUploader({ onFileSelect, maxSizeMB = 50, accept = "*", selectedFile = null, noLimit = false, multiple = false, disabled = false }) {
     const [isDragging, setIsDragging] = useState(false);
     const [error, setError] = useState('');
     const fileInputRef = useRef(null);
@@ -22,6 +22,7 @@ function FileUploader({ onFileSelect, maxSizeMB = 50, accept = "*", selectedFile
     const handleDragIn = (e) => {
         e.preventDefault();
         e.stopPropagation();
+        if (disabled) return;
         if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
             setIsDragging(true);
         }
@@ -56,6 +57,7 @@ function FileUploader({ onFileSelect, maxSizeMB = 50, accept = "*", selectedFile
         e.preventDefault();
         e.stopPropagation();
         setIsDragging(false);
+        if (disabled) return;
 
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
             const droppedFiles = Array.from(e.dataTransfer.files);
@@ -66,6 +68,7 @@ function FileUploader({ onFileSelect, maxSizeMB = 50, accept = "*", selectedFile
 
     const handleChange = (e) => {
         e.preventDefault();
+        if (disabled) return;
         if (e.target.files && e.target.files.length > 0) {
             const selected = Array.from(e.target.files);
             validateAndProcessFile(multiple ? selected : selected[0]);
@@ -73,6 +76,7 @@ function FileUploader({ onFileSelect, maxSizeMB = 50, accept = "*", selectedFile
     };
 
     const onButtonClick = () => {
+        if (disabled) return;
         if (fileInputRef.current) {
             fileInputRef.current.click();
         }
@@ -80,6 +84,7 @@ function FileUploader({ onFileSelect, maxSizeMB = 50, accept = "*", selectedFile
 
     const clearFile = (e) => {
         e.stopPropagation(); // prevent triggering upload dialog
+        if (disabled) return;
         onFileSelect(multiple ? [] : null);
         setError('');
         if (fileInputRef.current) {
@@ -102,7 +107,8 @@ function FileUploader({ onFileSelect, maxSizeMB = 50, accept = "*", selectedFile
                     padding: '30px 20px',
                     textAlign: 'center',
                     backgroundColor: isDragging ? 'rgba(44, 147, 250, 0.05)' : 'var(--bg-primary)',
-                    cursor: 'pointer',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    opacity: disabled ? 0.75 : 1,
                     transition: 'all 0.2s ease',
                     position: 'relative'
                 }}
@@ -113,6 +119,7 @@ function FileUploader({ onFileSelect, maxSizeMB = 50, accept = "*", selectedFile
                     accept={accept}
                     multiple={multiple}
                     onChange={handleChange}
+                    disabled={disabled}
                     style={{ display: 'none' }}
                 />
 
@@ -150,6 +157,7 @@ function FileUploader({ onFileSelect, maxSizeMB = 50, accept = "*", selectedFile
                             type="button"
                             onClick={clearFile}
                             className="btn btn-secondary btn-sm"
+                            disabled={disabled}
                             style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '5px' }}
                         >
                             <X size={14} /> Remove File

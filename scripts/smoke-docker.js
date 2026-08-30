@@ -8,6 +8,8 @@ const SESSION_ID = `smoke-${Date.now()}`;
 const OUTPUTS = [];
 const JOBS = [];
 let clipToken = null;
+let dropToken = null;
+let dropUploadId = null;
 
 function log(message) {
   console.log(`[smoke] ${message}`);
@@ -186,6 +188,65 @@ async function runClipSmoke(files) {
   log(`Clip finalize OK (${job.id}, token ${clipToken}, ${info.size} bytes)`);
 }
 
+async function runDropSmoke(files) {
+  dropUploadId = `codexdrop${Date.now()}`;
+  const chunkSize = 16 * 1024 * 1024;
+  const body = Buffer.alloc(33 * 1024 * 1024 + 123, 0x5a);
+  const ranges = [];
+  for (let start = 0; start < body.length; start += chunkSize) {
+    ranges.push({ start, end: Math.min(start + chunkSize - 1, body.length - 1) });
+  }
+
+  async function uploadRange(range) {
+    const chunk = body.subarray(range.start, range.end + 1);
+    const response = await fetch(`${BASE_URL}/api/drop/upload-chunk`, {
+      method: 'POST',
+      headers: {
+        'X-Upload-Id': dropUploadId,
+        'X-Session-Id': SESSION_ID,
+        'Content-Range': `bytes ${range.start}-${range.end}/${body.length}`,
+        'Content-Type': 'application/octet-stream'
+      },
+      body: chunk
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Drop chunk upload failed');
+    return data;
+  }
+
+  await uploadRange(ranges[0]);
+  const duplicate = await uploadRange(ranges[0]);
+  if (!duplicate.duplicate) throw new Error('Drop chunk retry was not idempotent');
+  for (const range of ranges.slice(1)) await uploadRange(range);
+
+  const created = await requestJson(`${BASE_URL}/api/drop/finalize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      uploadId: dropUploadId,
+      filename: 'codex-smoke.bin',
+      sessionId: SESSION_ID
+    })
+  });
+  dropToken = created.token;
+  if (!dropToken) throw new Error('Drop finalize completed without token');
+
+  const repeatedFinalize = await requestJson(`${BASE_URL}/api/drop/finalize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      uploadId: dropUploadId,
+      filename: 'codex-smoke.bin',
+      sessionId: SESSION_ID
+    })
+  });
+  if (repeatedFinalize.token !== dropToken) throw new Error('Drop finalize retry changed the token');
+
+  const info = await requestJson(`${BASE_URL}/api/drop/${dropToken}/info`);
+  if (info.size !== body.length) throw new Error('Drop info returned an invalid size');
+  log(`Chunked drop OK (token ${dropToken}, ${info.size} bytes)`);
+}
+
 async function cleanup() {
   for (const jobId of JOBS) {
     try {
@@ -201,6 +262,29 @@ async function cleanup() {
         body: JSON.stringify({ sessionId: SESSION_ID })
       });
     } catch (e) {}
+  }
+
+  if (dropToken) {
+    try {
+      const cleanupScript = [
+        "const fs = require('fs')",
+        "const path = require('path')",
+        "const Database = require('better-sqlite3')",
+        "const token = process.argv[1]",
+        "const db = new Database('/data/tools.db')",
+        "const row = db.prepare('SELECT path FROM drops WHERE token = ?').get(token)",
+        "db.prepare('DELETE FROM drops WHERE token = ?').run(token)",
+        "db.close()",
+        "if (row && row.path) { try { fs.unlinkSync(path.join('/data', row.path)) } catch (e) {} }"
+      ].join(';');
+      execFileSync('docker', ['compose', 'exec', '-T', 'api', 'node', '-e', cleanupScript, dropToken], { stdio: 'ignore' });
+    } catch (e) {}
+  }
+
+  if (dropUploadId) {
+    for (const suffix of ['.json', '.json.tmp', '.part']) {
+      try { fs.unlinkSync(path.join(DATA_DIR, 'drops-temp', `${dropUploadId}${suffix}`)); } catch (e) {}
+    }
   }
 
   for (const filePath of OUTPUTS) {
@@ -219,6 +303,7 @@ async function main() {
     await runCompressSmoke(files);
     await runCompressGifSmoke(files);
     await runClipSmoke(files);
+    await runDropSmoke(files);
     log('All smoke checks passed');
   } finally {
     await cleanup();

@@ -19,7 +19,7 @@ function safePath(baseDir, relativePath) {
   return resolved;
 }
 
-['downloads', 'converted', 'uploads', 'drops', 'clips', 'clips-temp', path.join('uploads', 'compress-temp')].forEach(dir => {
+['downloads', 'converted', 'uploads', 'drops', 'drops-temp', 'clips', 'clips-temp', path.join('uploads', 'compress-temp')].forEach(dir => {
   const dirPath = path.join(DATA_DIR, dir);
   if (!fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
@@ -356,6 +356,7 @@ async function cleanupExpiredJobs() {
       path.join(DATA_DIR, 'uploads', 'gif-temp'),
       path.join(DATA_DIR, 'uploads', 'pdf-temp'),
       path.join(DATA_DIR, 'uploads', 'compress-temp'),
+      path.join(DATA_DIR, 'drops-temp'),
       path.join(DATA_DIR, 'clips-temp')
     ];
     const oneHourAgo = Date.now() - 60 * 60 * 1000;

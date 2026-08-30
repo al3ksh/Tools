@@ -11,6 +11,8 @@ function Drop({ sessionId, isAdmin }) {
   const [drops, setDrops] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadedBytes, setUploadedBytes] = useState(0);
+  const [uploadPhase, setUploadPhase] = useState(null);
   const [error, setError] = useState(null);
   const [createdDrop, setCreatedDrop] = useState(null);
   const [toast, showToast] = useToast();
@@ -49,11 +51,22 @@ function Drop({ sessionId, isAdmin }) {
 
     setUploading(true);
     setUploadProgress(0);
+    setUploadedBytes(0);
+    setUploadPhase('uploading');
     setError('');
     setCreatedDrop(null);
 
     try {
-      const result = await api.uploadDrop(file, sessionId, uploadPassword.trim(), (pct) => setUploadProgress(pct));
+      const result = await api.uploadDrop(
+        file,
+        sessionId,
+        uploadPassword.trim(),
+        (progress) => {
+          setUploadProgress((current) => Math.max(current, progress.percent));
+          setUploadedBytes((current) => Math.max(current, progress.uploadedBytes));
+        },
+        setUploadPhase
+      );
       setCreatedDrop(result);
       setFile(null);
       setUploadPassword('');
@@ -63,6 +76,7 @@ function Drop({ sessionId, isAdmin }) {
       setError(err.message);
     } finally {
       setUploading(false);
+      setUploadPhase(null);
     }
   };
 
@@ -107,7 +121,7 @@ function Drop({ sessionId, isAdmin }) {
           <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <FolderOpen size={24} /> Drop Files
           </h2>
-          <div className="subtitle">Share files via unique links (max 50MB)</div>
+          <div className="subtitle">Share files via unique links ({isAdmin ? 'up to 5GB' : 'up to 50MB'})</div>
         </div>
       </div>
 
@@ -123,12 +137,14 @@ function Drop({ sessionId, isAdmin }) {
                 <label className="form-label">Choose File</label>
                 <FileUploader
                   onFileSelect={setFile}
-                  maxSizeMB={50}
+                  maxSizeMB={isAdmin ? 5120 : 50}
                   accept="*"
                   selectedFile={file}
-                  noLimit={isAdmin}
+                  disabled={uploading}
                 />
-                <div className="form-help">{isAdmin ? 'Admin: No size limit' : 'Maximum file size: 50MB'}</div>
+                <div className="form-help">
+                  {isAdmin ? 'Admin limit: 5GB. Large files upload in retryable chunks.' : 'Maximum file size: 50MB'}
+                </div>
               </div>
 
               <div className="form-group">
@@ -144,11 +160,13 @@ function Drop({ sessionId, isAdmin }) {
                     placeholder="Leave empty for no password"
                     value={uploadPassword}
                     onChange={(e) => setUploadPassword(e.target.value)}
+                    disabled={uploading}
                     style={{ paddingRight: '40px' }}
                   />
                   <button
                     type="button"
                     onClick={() => setShowUploadPassword(!showUploadPassword)}
+                    disabled={uploading}
                     style={{
                       position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
                       background: 'none', border: 'none', color: 'var(--text-secondary)',
@@ -204,22 +222,37 @@ function Drop({ sessionId, isAdmin }) {
               )}
 
               {uploading && (
-                <div style={{ marginBottom: '15px' }}>
+                <div style={{ marginBottom: '15px' }} role="status" aria-live="polite">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '12px' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Uploading...</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      {uploadPhase === 'finalizing'
+                        ? 'Finalizing share link...'
+                        : uploadPhase === 'retrying'
+                          ? 'Connection interrupted. Retrying this chunk...'
+                          : `Uploading ${formatBytes(uploadedBytes)} of ${formatBytes(file?.size || 0)}...`}
+                    </span>
                     <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{uploadProgress}%</span>
                   </div>
                   <div style={{ width: '100%', height: '6px', background: 'var(--bg-tertiary, var(--bg))', borderRadius: '3px', overflow: 'hidden' }}>
                     <div style={{
-                      height: '100%', borderRadius: '3px', transition: 'width 0.2s ease',
-                      background: 'var(--accent)', width: `${uploadProgress}%`,
+                      height: '100%', borderRadius: '3px', transition: 'transform 0.2s ease',
+                      background: 'var(--accent)', width: '100%', transform: `scaleX(${uploadProgress / 100})`,
+                      transformOrigin: 'left center'
                     }} />
                   </div>
                 </div>
               )}
 
               <button type="submit" className="btn btn-primary" disabled={uploading || !file}>
-                {uploading ? <><Clock size={16} /> Uploading... {uploadProgress}%</> : <><Upload size={16} /> Upload File</>}
+                {uploading
+                  ? <><Clock size={16} /> {
+                    uploadPhase === 'finalizing'
+                      ? 'Finalizing...'
+                      : uploadPhase === 'retrying'
+                        ? 'Retrying...'
+                        : `Uploading... ${uploadProgress}%`
+                  }</>
+                  : <><Upload size={16} /> Upload File</>}
               </button>
             </form>
           </div>
