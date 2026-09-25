@@ -204,6 +204,9 @@ function App() {
           <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
             <div className="sidebar-header">
               <h1><Wrench size={24} color="var(--accent-text)" /> <span>Tools</span></h1>
+              <a className="powered-by" href="https://github.com/al3ksh/Kadron" target="_blank" rel="noopener noreferrer">
+                powered by <strong>Kadron</strong>
+              </a>
             </div>
             <nav className="sidebar-nav">
               <div className="nav-section">Menu</div>

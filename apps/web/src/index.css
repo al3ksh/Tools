@@ -88,6 +88,24 @@ body {
   letter-spacing: 0.5px;
 }
 
+.powered-by {
+  display: inline-block;
+  margin: 4px 0 0 36px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  letter-spacing: 0.3px;
+}
+
+.powered-by strong {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.powered-by:hover {
+  color: var(--text-primary);
+}
+
 .sidebar-nav {
   flex: 1;
   padding: 10px 0;
