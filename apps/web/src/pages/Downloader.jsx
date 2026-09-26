@@ -218,7 +218,7 @@ function Downloader({ sessionId }) {
                 )}
 
                 {error && (
-                  <div style={{ color: 'var(--error)', marginBottom: '15px', padding: '10px', background: 'rgba(231, 76, 60, 0.1)', borderRadius: '6px' }}>
+                  <div style={{ color: 'var(--error)', marginBottom: '15px', padding: '10px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px' }}>
                     {error}
                   </div>
                 )}
@@ -294,10 +294,10 @@ function Downloader({ sessionId }) {
                 </div>
               </div>
             ) : (
-              /* Empty skeleton state when no valid URL is present */
-              <div style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
-                <div className="skeleton-box" style={{ width: '100%', aspectRatio: '16/9' }} />
-                <div className="skeleton-box" style={{ width: '100%', height: '42px', borderTop: '1px solid var(--border)' }} />
+              <div className="preview-empty">
+                <LinkIcon size={26} />
+                <strong>Paste a link to see it here</strong>
+                <span>The thumbnail and site show up before you download.</span>
               </div>
             )}
           </div>

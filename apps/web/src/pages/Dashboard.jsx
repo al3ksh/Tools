@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { LayoutDashboard, RefreshCw, FolderOpen, Clock, CheckCircle, XCircle, Zap, Download, FileAudio, Link as LinkIcon, Database, ClipboardList, Settings, Inbox, Archive, PackageOpen, Film } from 'lucide-react';
 import JobProgress from '../components/JobProgress';
 import Pagination from '../components/Pagination';
+import { KadronHero } from '../components/Kadron';
 
 function Dashboard({ sessionId, isAdmin }) {
   const [jobs, setJobs] = useState([]);
@@ -77,6 +78,8 @@ function Dashboard({ sessionId, isAdmin }) {
       </div>
 
       <div className="content">
+        <KadronHero />
+
         {/* Session Banner */}
         <div className="session-banner">
           <div className="session-info">

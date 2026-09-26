@@ -1,41 +1,56 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, Wrench, UserCircle, Settings, Sun, Moon, Shield, X, Menu, Cookie, FileText, QrCode, Files, Sparkles, Film, PackageOpen } from 'lucide-react';
+import { LayoutDashboard, Download, FileAudio, Link as LinkIcon, FolderOpen, UserCircle, Settings, Sun, Moon, Shield, X, Menu, Cookie, FileText, QrCode, Files, Sparkles, Film, PackageOpen } from 'lucide-react';
 import { lazy, Suspense, useState, useEffect } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
+import { KadronPromo, ToolsLockup } from './components/Kadron';
 import './index.css';
 
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Downloader = lazy(() => import('./pages/Downloader'));
-const Converter = lazy(() => import('./pages/Converter'));
-const Compressor = lazy(() => import('./pages/Compressor'));
-const Shortener = lazy(() => import('./pages/Shortener'));
-const Drop = lazy(() => import('./pages/Drop'));
-const DropView = lazy(() => import('./pages/DropView'));
-const AdminPanel = lazy(() => import('./pages/AdminPanel'));
-const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
-const QRCode = lazy(() => import('./pages/QRCode'));
-const PDFEditor = lazy(() => import('./pages/PDFEditor'));
-const GifMaker = lazy(() => import('./pages/GifMaker'));
-const Clips = lazy(() => import('./pages/Clips'));
-const ClipView = lazy(() => import('./pages/ClipView'));
-const ClipEmbed = lazy(() => import('./pages/ClipEmbed'));
-const NotFound = lazy(() => import('./pages/NotFound'));
+const pages = {
+  Dashboard: () => import('./pages/Dashboard'),
+  Downloader: () => import('./pages/Downloader'),
+  Converter: () => import('./pages/Converter'),
+  Compressor: () => import('./pages/Compressor'),
+  Shortener: () => import('./pages/Shortener'),
+  Drop: () => import('./pages/Drop'),
+  DropView: () => import('./pages/DropView'),
+  AdminPanel: () => import('./pages/AdminPanel'),
+  PrivacyPolicy: () => import('./pages/PrivacyPolicy'),
+  QRCode: () => import('./pages/QRCode'),
+  PDFEditor: () => import('./pages/PDFEditor'),
+  GifMaker: () => import('./pages/GifMaker'),
+  Clips: () => import('./pages/Clips'),
+  ClipView: () => import('./pages/ClipView'),
+  ClipEmbed: () => import('./pages/ClipEmbed'),
+  NotFound: () => import('./pages/NotFound'),
+};
+const Dashboard = lazy(pages.Dashboard);
+const Downloader = lazy(pages.Downloader);
+const Converter = lazy(pages.Converter);
+const Compressor = lazy(pages.Compressor);
+const Shortener = lazy(pages.Shortener);
+const Drop = lazy(pages.Drop);
+const DropView = lazy(pages.DropView);
+const AdminPanel = lazy(pages.AdminPanel);
+const PrivacyPolicy = lazy(pages.PrivacyPolicy);
+const QRCode = lazy(pages.QRCode);
+const PDFEditor = lazy(pages.PDFEditor);
+const GifMaker = lazy(pages.GifMaker);
+const Clips = lazy(pages.Clips);
+const ClipView = lazy(pages.ClipView);
+const ClipEmbed = lazy(pages.ClipEmbed);
+const NotFound = lazy(pages.NotFound);
 
+// Fetch every section in the background once the first page has settled, so
+// switching sections never waits on the network.
+function prefetchPages() {
+  const run = () => Object.values(pages).forEach((load) => load().catch(() => {}));
+  if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 2500 });
+  else setTimeout(run, 1200);
+}
+
+// Only seen on a cold first load of a section; kept empty to avoid a flash.
 function RouteLoading() {
-  return (
-    <div className="content">
-      <div style={{
-        minHeight: '240px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'var(--text-secondary)',
-        fontSize: '13px'
-      }}>
-        Loading...
-      </div>
-    </div>
-  );
+  return <div className="content" />;
 }
 
 function App() {
@@ -191,11 +206,13 @@ function App() {
 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
 
+  useEffect(prefetchPages, []);
+
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
   return (
     <>
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <div className="app-container">
           <button className="mobile-menu-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
             <Menu size={20} />
@@ -203,10 +220,7 @@ function App() {
           <div className={`sidebar-overlay${sidebarOpen ? ' visible' : ''}`} onClick={() => setSidebarOpen(false)} />
           <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
             <div className="sidebar-header">
-              <h1><Wrench size={24} color="var(--accent-text)" /> <span>Tools</span></h1>
-              <a className="powered-by" href="https://github.com/al3ksh/Kadron" target="_blank" rel="noopener noreferrer">
-                powered by <strong>Kadron</strong>
-              </a>
+              <ToolsLockup />
             </div>
             <nav className="sidebar-nav">
               <div className="nav-section">Menu</div>
@@ -261,6 +275,7 @@ function App() {
               )}
             </nav>
               <div className="sidebar-footer">
+                <KadronPromo />
                 <div className="user-profile-card">
                   <UserCircle size={32} className="user-avatar" />
                   <div className="user-details">
@@ -404,15 +419,26 @@ function App() {
                         {isDarkMode ? <><Sun size={14} /> Light</> : <><Moon size={14} /> Dark</>}
                       </button>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>Accent Color</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '13px', color: 'var(--text-primary)', flex: 1 }}>Accent Color</span>
+                      {accentColor && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => { setAccentColor(''); localStorage.removeItem('accentColor'); }}
+                          title="Back to Kadron lime"
+                          style={{ padding: '0 8px', fontSize: '11px' }}
+                        >
+                          Reset
+                        </button>
+                      )}
                       <div style={{
                         width: '28px', height: '28px', borderRadius: '6px', border: '2px solid var(--border)',
                         background: accentColor || 'var(--accent)', cursor: 'pointer', flexShrink: 0, overflow: 'hidden',
                       }}>
                         <input
                           type="color"
-                          value={accentColor || '#2c93fa'}
+                          value={accentColor || '#c9f27a'}
                           onChange={(e) => {
                             const c = e.target.value;
                             setAccentColor(c);

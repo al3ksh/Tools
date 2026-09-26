@@ -117,7 +117,7 @@ export default function ColorPicker({ fgColor, bgColor, onFgChange, onBgChange, 
   const selectorStyle = (isActive) => ({
     display: 'flex', alignItems: 'center', gap: '6px', flex: 1,
     padding: '5px 8px', borderRadius: '6px', border: `2px solid ${isActive ? 'var(--accent)' : 'var(--border)'}`,
-    background: isActive ? 'rgba(44, 147, 250, 0.1)' : 'transparent',
+    background: isActive ? 'rgba(201, 242, 122, 0.1)' : 'transparent',
     cursor: 'pointer', transition: 'all 0.15s',
   });
 

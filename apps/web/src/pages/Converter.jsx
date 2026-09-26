@@ -181,9 +181,9 @@ function Converter({ sessionId, isAdmin }) {
                 <div style={{
                   marginTop: '10px',
                   padding: '10px',
-                  background: 'rgba(46, 204, 113, 0.1)',
+                  background: 'rgba(167, 212, 180, 0.12)',
                   borderRadius: '6px',
-                  border: '1px solid rgba(46, 204, 113, 0.3)',
+                  border: '1px solid rgba(167, 212, 180, 0.36)',
                   color: 'var(--success)',
                   display: 'flex',
                   alignItems: 'center',
@@ -208,8 +208,8 @@ function Converter({ sessionId, isAdmin }) {
                 <div style={{ marginBottom: '20px', width: '100%', minWidth: 0, overflow: 'hidden', display: 'block' }}>
                   <AudioTrimmer
                     file={selectedFile}
-                    initialStart={formData.startTime}
-                    initialEnd={formData.endTime}
+                    start={formData.startTime}
+                    end={formData.endTime}
                     onChange={({ start, end }) => {
                       setFormData(prev => ({ ...prev, startTime: start, endTime: end }));
                     }}

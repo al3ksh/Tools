@@ -111,7 +111,7 @@ export default function QRCode() {
                   maxLength={4296}
                 />
                 {error && (
-                  <div style={{ color: 'var(--error)', marginTop: '6px', padding: '6px 8px', background: 'rgba(231,76,60,0.1)', borderRadius: '4px', fontSize: '12px' }}>{error}</div>
+                  <div style={{ color: 'var(--error)', marginTop: '6px', padding: '6px 8px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '4px', fontSize: '12px' }}>{error}</div>
                 )}
               </div>
 

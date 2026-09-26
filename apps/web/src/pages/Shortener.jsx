@@ -109,18 +109,18 @@ function Shortener({ sessionId }) {
               </div>
 
               {error && (
-                <div style={{ color: 'var(--error)', marginBottom: '15px', padding: '10px', background: 'rgba(231, 76, 60, 0.1)', borderRadius: '6px' }}>
+                <div style={{ color: 'var(--error)', marginBottom: '15px', padding: '10px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px' }}>
                   {error}
                 </div>
               )}
 
               {createdLink && (
                 <div style={{
-                  background: 'rgba(46, 204, 113, 0.1)',
+                  background: 'rgba(167, 212, 180, 0.12)',
                   padding: '15px',
                   borderRadius: '6px',
                   marginBottom: '15px',
-                  border: '1px solid rgba(46, 204, 113, 0.3)'
+                  border: '1px solid rgba(167, 212, 180, 0.36)'
                 }}>
                   <div style={{ marginBottom: '8px', fontWeight: '500', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <CheckCircle size={16} /> Short link created:

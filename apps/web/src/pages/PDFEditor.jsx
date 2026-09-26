@@ -550,7 +550,7 @@ export default function PDFEditor({ sessionId, isAdmin }) {
                 </div>
 
                 {error && (
-                  <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231,76,60,0.1)', borderRadius: '6px', fontSize: '13px' }}>
+                  <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px', fontSize: '13px' }}>
                     {error}
                   </div>
                 )}
@@ -603,7 +603,7 @@ export default function PDFEditor({ sessionId, isAdmin }) {
                   ))}
                 </div>
               )}
-              {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231,76,60,0.1)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
+              {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
               {mergeFiles.length >= 2 && (
                 <>
                   <button className="btn btn-primary" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -645,7 +645,7 @@ export default function PDFEditor({ sessionId, isAdmin }) {
                     <input type="text" className="form-input" value={splitInput} onChange={(e) => setSplitInput(e.target.value)} placeholder="e.g. 1, 3, 5-8" />
                     <div className="form-help">Separate with commas. Use dash for ranges.</div>
                   </div>
-                  {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231,76,60,0.1)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
+                  {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
                   <button className="btn btn-primary" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
                     onClick={handleProcess} disabled={processing || !splitInput.trim()}>
                     {processing ? <><Clock size={16} /> Extracting...</> : <><Download size={16} /> Extract & Download</>}
@@ -687,7 +687,7 @@ export default function PDFEditor({ sessionId, isAdmin }) {
                   ))}
                 </div>
               )}
-              {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231,76,60,0.1)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
+              {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
               {imageFiles.length > 0 && (
                 <>
                   <button className="btn btn-primary" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}

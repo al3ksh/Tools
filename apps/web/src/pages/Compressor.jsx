@@ -232,7 +232,7 @@ function Compressor({ sessionId, isAdmin }) {
               )}
 
               {error && (
-                <div style={{ color: 'var(--error)', marginBottom: '12px', padding: '10px', background: 'rgba(231, 76, 60, 0.1)', borderRadius: '6px' }}>
+                <div style={{ color: 'var(--error)', marginBottom: '12px', padding: '10px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px' }}>
                   {error}
                 </div>
               )}

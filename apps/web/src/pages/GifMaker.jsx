@@ -1,18 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Film, Upload, Play, Pause, Download, RotateCcw, Sparkles, Scissors, SlidersHorizontal, Wand2 } from 'lucide-react';
+import { Film, Upload, Play, Pause, Download, RotateCcw, Sparkles, SlidersHorizontal, Wand2 } from 'lucide-react';
 import { api, formatBytes } from '../api';
 import FileUploader from '../components/FileUploader';
 import JobProgress from '../components/JobProgress';
+import RangeStrip, { Filmstrip, formatStripTime } from '../components/RangeStrip';
+import useFilmstrip from '../hooks/useFilmstrip';
 
 function clamp(value, min, max, fallback) {
   const n = Number(value);
   if (Number.isNaN(n)) return fallback;
   return Math.min(Math.max(n, min), max);
-}
-
-function formatSeconds(value) {
-  if (!Number.isFinite(value)) return '0.00s';
-  return `${value.toFixed(2)}s`;
 }
 
 export default function GifMaker({ sessionId, isAdmin }) {
@@ -26,7 +23,6 @@ export default function GifMaker({ sessionId, isAdmin }) {
   const [resultUrl, setResultUrl] = useState('');
   const [resultSize, setResultSize] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
-  const [timelineFrames, setTimelineFrames] = useState([]);
 
   const [fps, setFps] = useState(15);
   const [width, setWidth] = useState(480);
@@ -36,36 +32,23 @@ export default function GifMaker({ sessionId, isAdmin }) {
   const [reverse, setReverse] = useState(false);
   const [startSec, setStartSec] = useState('0');
   const [endSec, setEndSec] = useState('');
-  const [hoveredHandle, setHoveredHandle] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
   const [isRegionPlaying, setIsRegionPlaying] = useState(false);
   const [snapEnabled, setSnapEnabled] = useState(true);
-  const [draggingHandle, setDraggingHandle] = useState(null);
 
   const videoRef = useRef(null);
-  const timelineRef = useRef(null);
-  const dragModeRef = useRef(null);
-  const regionDragRef = useRef(null);
 
   const sourceUrl = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
   const isGifInput = file ? file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif') : false;
   const isStaticImage = file ? file.type.startsWith('image/') && !isGifInput : false;
   const duration = meta?.duration && Number.isFinite(meta.duration) ? Number(meta.duration) : 0;
+  const timelineFrames = useFilmstrip(isGifInput || isStaticImage ? '' : sourceUrl, duration);
 
   const parsedStart = clamp(startSec, 0, duration || 99999, 0);
   const parsedEnd = endSec === '' ? duration : clamp(endSec, 0, duration || 99999, duration || 0);
   const safeStart = Math.min(parsedStart, parsedEnd || parsedStart);
   const safeEnd = Math.max(parsedEnd, safeStart + 0.05);
   const clipDuration = Math.max(safeEnd - safeStart, 0);
-  const timelinePlayhead = duration > 0 ? (Math.min(Math.max(currentTime, 0), duration) / duration) * 100 : 0;
-  const timelineStart = duration > 0 ? (safeStart / duration) * 100 : 0;
-  const timelineWidth = duration > 0 ? Math.max(((safeEnd - safeStart) / duration) * 100, 1) : 100;
   const frameInterval = 1 / Math.max(Number(fps) || 15, 1);
-  const handleVisualRadius = duration > 0 ? Math.max(duration * 0.006, 0.08) : 0;
-  const playheadOverHandle = duration > 0 && (
-    Math.abs(currentTime - safeStart) <= handleVisualRadius ||
-    Math.abs(currentTime - safeEnd) <= handleVisualRadius
-  );
   const targetBytes = Math.max(Number(targetMB) || 0, 0) * 1024 * 1024;
   const resultRatio = resultSize && targetBytes > 0 ? Math.min((resultSize / targetBytes) * 100, 100) : 0;
   const resultOverTarget = resultSize && targetBytes > 0 && resultSize > targetBytes;
@@ -77,34 +60,9 @@ export default function GifMaker({ sessionId, isAdmin }) {
     return { label: 'High', color: 'var(--warning)' };
   }, [width, fps, clipDuration]);
 
-  const timelineTicks = useMemo(() => {
-    if (!duration || duration <= 0) return [];
-    let interval;
-    if (duration <= 3) interval = 0.5;
-    else if (duration <= 10) interval = 1;
-    else if (duration <= 30) interval = 2;
-    else if (duration <= 60) interval = 5;
-    else interval = 10;
-    const ticks = [];
-    for (let t = 0; t <= duration + 0.001; t += interval) {
-      ticks.push(Math.min(t, duration));
-    }
-    return ticks;
-  }, [duration]);
-
-  const clearTimelineFrames = () => {
-    setTimelineFrames((prev) => {
-      prev.forEach((frame) => {
-        try { URL.revokeObjectURL(frame.url); } catch (e) { /* ignore */ }
-      });
-      return [];
-    });
-  };
-
   useEffect(() => {
     return () => {
       if (sourceUrl) URL.revokeObjectURL(sourceUrl);
-      clearTimelineFrames();
     };
   }, [sourceUrl]);
 
@@ -122,7 +80,6 @@ export default function GifMaker({ sessionId, isAdmin }) {
     setPreviewUrl('');
     setResultUrl('');
     setResultSize(null);
-    clearTimelineFrames();
     setMeta(null);
     setCurrentTime(0);
     setIsRegionPlaying(false);
@@ -159,108 +116,9 @@ export default function GifMaker({ sessionId, isAdmin }) {
     }
   };
 
-  useEffect(() => {
-    if (!sourceUrl || isGifInput || !duration || duration <= 0) {
-      clearTimelineFrames();
-      return;
-    }
-
-    let cancelled = false;
-    const frameCount = 9;
-    const thumbs = [];
-
-    const generateFrames = async () => {
-      const tempVideo = document.createElement('video');
-      tempVideo.src = sourceUrl;
-      tempVideo.preload = 'auto';
-      tempVideo.muted = true;
-      tempVideo.playsInline = true;
-
-      const waitFor = (event) => new Promise((resolve, reject) => {
-        const onOk = () => {
-          tempVideo.removeEventListener(event, onOk);
-          tempVideo.removeEventListener('error', onErr);
-          resolve();
-        };
-        const onErr = () => {
-          tempVideo.removeEventListener(event, onOk);
-          tempVideo.removeEventListener('error', onErr);
-          reject(new Error('Failed to build timeline previews'));
-        };
-        tempVideo.addEventListener(event, onOk, { once: true });
-        tempVideo.addEventListener('error', onErr, { once: true });
-      });
-
-      try {
-        await waitFor('loadedmetadata');
-        const canvas = document.createElement('canvas');
-        const ratio = tempVideo.videoWidth / Math.max(tempVideo.videoHeight, 1);
-        canvas.width = 120;
-        canvas.height = Math.max(68, Math.round(canvas.width / Math.max(ratio, 0.3)));
-        const ctx = canvas.getContext('2d');
-
-        for (let i = 0; i < frameCount; i++) {
-          if (cancelled) break;
-          const t = (duration * i) / Math.max(frameCount - 1, 1);
-          tempVideo.currentTime = Math.min(t, Math.max(duration - 0.02, 0));
-          await waitFor('seeked');
-          ctx.drawImage(tempVideo, 0, 0, canvas.width, canvas.height);
-          const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
-          if (!blob) continue;
-          thumbs.push({
-            t,
-            url: URL.createObjectURL(blob),
-          });
-        }
-
-        if (!cancelled) {
-          setTimelineFrames((prev) => {
-            prev.forEach((frame) => {
-              try { URL.revokeObjectURL(frame.url); } catch (e) { /* ignore */ }
-            });
-            return thumbs;
-          });
-        }
-      } catch {
-        if (!cancelled) {
-          clearTimelineFrames();
-        }
-      }
-    };
-
-    generateFrames();
-
-    return () => {
-      cancelled = true;
-      thumbs.forEach((frame) => {
-        try { URL.revokeObjectURL(frame.url); } catch (e) { /* ignore */ }
-      });
-    };
-  }, [sourceUrl, duration, isGifInput]);
-
   const snapToFrame = (t) => {
     if (!snapEnabled) return Math.round(t * 1000) / 1000;
     return Math.round(Math.round(t / frameInterval) * frameInterval * 1000) / 1000;
-  };
-
-  const formatTimelineTime = (seconds) => {
-    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const getPointerX = (e) => {
-    if (e.touches && e.touches.length > 0) return e.touches[0].clientX;
-    if (e.changedTouches && e.changedTouches.length > 0) return e.changedTouches[0].clientX;
-    return e.clientX;
-  };
-
-  const timeFromPointer = (clientX) => {
-    if (!timelineRef.current || !duration || duration <= 0) return 0;
-    const rect = timelineRef.current.getBoundingClientRect();
-    const ratio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
-    return Math.min(Math.max(ratio, 0), 1) * duration;
   };
 
   const toggleRegionPlay = () => {
@@ -274,19 +132,7 @@ export default function GifMaker({ sessionId, isAdmin }) {
     if (video.currentTime < safeStart || video.currentTime >= safeEnd) {
       video.currentTime = safeStart;
     }
-    video.play();
-    setIsRegionPlaying(true);
-  };
-
-  const getDragMode = (clientX) => {
-    if (!duration || duration <= 0 || !timelineRef.current) return 'playhead';
-    const t = timeFromPointer(clientX);
-    const pxPerSec = timelineRef.current.getBoundingClientRect().width / duration;
-    const handleRadius = Math.max(14 / pxPerSec, 0.08);
-    if (Math.abs(t - safeStart) <= handleRadius) return 'start';
-    if (Math.abs(t - safeEnd) <= handleRadius) return 'end';
-    if (t > safeStart && t < safeEnd) return 'region';
-    return 'playhead';
+    video.play().then(() => setIsRegionPlaying(true)).catch(() => setIsRegionPlaying(false));
   };
 
   const jumpToTime = (time) => {
@@ -301,161 +147,23 @@ export default function GifMaker({ sessionId, isAdmin }) {
     }
   };
 
-  const updateTrimFromPointer = (clientX, mode = dragModeRef.current) => {
-    if (!timelineRef.current || !duration || duration <= 0 || !mode) return;
-    let t = timeFromPointer(clientX);
-    t = snapToFrame(t);
-
-    if (mode === 'start') {
-      const nextStart = Math.min(t, safeEnd - frameInterval);
-      setStartSec(String(nextStart));
-      jumpToTime(nextStart);
-      return;
-    }
-
-    if (mode === 'end') {
-      const nextEnd = Math.max(t, safeStart + frameInterval);
-      setEndSec(String(nextEnd));
-      jumpToTime(nextEnd);
-      return;
-    }
-
-    if (mode === 'region' && regionDragRef.current) {
-      const drag = regionDragRef.current;
-      const movedPx = Math.abs(clientX - drag.mouseX);
-      if (!drag.didDrag && movedPx < 5) return;
-      drag.didDrag = true;
-
-      const rect = timelineRef.current.getBoundingClientRect();
-      const startRatio = rect.width > 0 ? (drag.mouseX - rect.left) / rect.width : 0;
-      const currentRatio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
-      const delta = (currentRatio - startRatio) * duration;
-      let newStart = drag.start + delta;
-      let newEnd = drag.end + delta;
-
-      if (newStart < 0) { newEnd -= newStart; newStart = 0; }
-      if (newEnd > duration) { newStart -= (newEnd - duration); newEnd = duration; }
-      newStart = Math.max(0, snapToFrame(newStart));
-      newEnd = Math.min(duration, snapToFrame(newEnd));
-      if (newEnd - newStart < frameInterval) return;
-
-      setStartSec(String(newStart));
-      setEndSec(String(newEnd));
-      const nextPlayhead = Math.min(Math.max(drag.playheadOffset + newStart, newStart), newEnd);
-      jumpToTime(nextPlayhead);
-      return;
-    }
-
-    jumpToTime(t);
-  };
-
-  const beginDrag = (mode, e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const clientX = getPointerX(e);
-    dragModeRef.current = mode;
-    setIsDragging(true);
-    const isHandle = mode === 'start' || mode === 'end';
-    setDraggingHandle(isHandle ? mode : null);
-    if (mode === 'region') {
-      const clickedTime = snapToFrame(timeFromPointer(clientX));
-      const playheadOffset = currentTime >= safeStart && currentTime <= safeEnd ? currentTime - safeStart : clickedTime - safeStart;
-      regionDragRef.current = {
-        mouseX: clientX,
-        start: safeStart,
-        end: safeEnd,
-        clickedTime,
-        playheadOffset,
-        didDrag: false,
-      };
-      return;
-    }
-    updateTrimFromPointer(clientX, mode);
-  };
-
+  // The selection preview loops like the finished GIF. Following the video
+  // every frame keeps the loop point tight (timeupdate fires only ~4x a second).
+  const rangeRef = useRef({ start: 0, end: 0 });
+  rangeRef.current = { start: safeStart, end: safeEnd };
   useEffect(() => {
-    const onMove = (e) => {
-      if (!dragModeRef.current) return;
-      if (e.cancelable) e.preventDefault();
-      updateTrimFromPointer(getPointerX(e), dragModeRef.current);
+    if (!isRegionPlaying) return undefined;
+    let frame = 0;
+    const tick = () => {
+      const video = videoRef.current;
+      if (!video) return;
+      if (video.currentTime >= rangeRef.current.end - 0.01) video.currentTime = rangeRef.current.start;
+      setCurrentTime(video.currentTime);
+      frame = requestAnimationFrame(tick);
     };
-
-    const onUp = () => {
-      if (dragModeRef.current === 'region' && regionDragRef.current && !regionDragRef.current.didDrag) {
-        jumpToTime(regionDragRef.current.clickedTime);
-      }
-      dragModeRef.current = null;
-      regionDragRef.current = null;
-      setIsDragging(false);
-      setDraggingHandle(null);
-    };
-
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    window.addEventListener('touchmove', onMove, { passive: false });
-    window.addEventListener('touchend', onUp);
-    window.addEventListener('touchcancel', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-      window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('touchend', onUp);
-      window.removeEventListener('touchcancel', onUp);
-    };
-  }, [duration, safeStart, safeEnd, frameInterval, snapEnabled]);
-
-  useEffect(() => {
-    const el = timelineRef.current;
-    if (!el || !duration || duration <= 0 || isGifInput) return;
-
-    const onKeyDown = (e) => {
-      const step = frameInterval;
-
-      switch (e.key) {
-        case 'ArrowLeft':
-          e.preventDefault();
-          if (e.shiftKey) {
-            const nextEnd = Math.max(safeStart + frameInterval, safeEnd - step);
-            setEndSec(String(snapToFrame(nextEnd)));
-          } else {
-            const nextStart = Math.max(0, safeStart - step);
-            setStartSec(String(snapToFrame(nextStart)));
-            jumpToTime(nextStart);
-          }
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          if (e.shiftKey) {
-            const nextEnd = Math.min(duration, safeEnd + step);
-            setEndSec(String(snapToFrame(nextEnd)));
-            jumpToTime(nextEnd);
-          } else {
-            const nextStart = Math.min(safeEnd - frameInterval, safeStart + step);
-            setStartSec(String(snapToFrame(nextStart)));
-            jumpToTime(nextStart);
-          }
-          break;
-        case ' ':
-          e.preventDefault();
-          toggleRegionPlay();
-          break;
-        case 'Home':
-          e.preventDefault();
-          jumpToTime(safeStart);
-          break;
-        case 'End':
-          e.preventDefault();
-          jumpToTime(safeEnd);
-          break;
-      }
-    };
-
-    el.setAttribute('tabindex', '0');
-    el.addEventListener('keydown', onKeyDown);
-    return () => {
-      el.removeEventListener('keydown', onKeyDown);
-    };
-  }, [duration, safeStart, safeEnd, frameInterval, snapEnabled, isRegionPlaying, isGifInput]);
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [isRegionPlaying]);
 
   const buildOptions = (preview) => {
     const options = {
@@ -519,7 +227,6 @@ export default function GifMaker({ sessionId, isAdmin }) {
     setPreviewUrl('');
     setResultUrl('');
     setResultSize(null);
-    clearTimelineFrames();
     setFps(15);
     setWidth(480);
     setTargetMB(8);
@@ -592,14 +299,8 @@ export default function GifMaker({ sessionId, isAdmin }) {
                     ref={videoRef}
                     src={sourceUrl}
                     controls
-                    onTimeUpdate={(e) => {
-                      const t = e.currentTarget.currentTime || 0;
-                      setCurrentTime(t);
-                      if (isRegionPlaying && t >= safeEnd) {
-                        e.currentTarget.pause();
-                        setIsRegionPlaying(false);
-                      }
-                    }}
+                    onTimeUpdate={(e) => { if (!isRegionPlaying) setCurrentTime(e.currentTarget.currentTime || 0); }}
+                    onPause={() => setIsRegionPlaying(false)}
                     onLoadedMetadata={(e) => setCurrentTime(e.currentTarget.currentTime || 0)}
                     style={{ width: '100%', display: 'block', background: '#000', maxHeight: '360px', objectFit: 'contain' }}
                   />
@@ -619,243 +320,55 @@ export default function GifMaker({ sessionId, isAdmin }) {
           </div>
           <div className="card-body">
             {!isGifInput && file && duration > 0 && (
-              <div style={{ marginBottom: '14px', padding: '14px', border: '1px solid var(--border)', borderRadius: '10px', background: 'var(--bg)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', gap: '10px', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                      <Scissors size={14} /> Visual Trim Editor
-                    </div>
-                    <button
-                      type="button"
-                      className={`btn ${isRegionPlaying ? 'btn-primary' : 'btn-secondary'} btn-sm`}
-                      onClick={toggleRegionPlay}
-                      title={isRegionPlaying ? 'Pause region' : 'Play region'}
-                      style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px' }}
-                    >
-                      {isRegionPlaying ? <Pause size={12} /> : <Play size={12} />}
-                      {isRegionPlaying ? 'Pause' : 'Play'}
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
-                      <input
-                        type="checkbox"
-                        checked={snapEnabled}
-                        onChange={(e) => setSnapEnabled(e.target.checked)}
-                        style={{ margin: 0, width: '13px', height: '13px' }}
-                      />
-                      Snap
-                    </label>
-                    <div style={{ fontSize: '12px', color: 'var(--accent-text)', fontWeight: 600 }}>
-                      {formatSeconds(clipDuration)}
-                    </div>
+              <div className="trimmer" style={{ marginBottom: '18px' }}>
+                <div className="trimmer-row">
+                  <button
+                    type="button"
+                    className={`trimmer-play${isRegionPlaying ? ' is-playing' : ''}`}
+                    onClick={toggleRegionPlay}
+                    aria-label={isRegionPlaying ? 'Pause selection' : 'Play selection'}
+                    title={isRegionPlaying ? 'Pause (Space)' : 'Play selection on a loop (Space)'}
+                  >
+                    {isRegionPlaying ? <Pause size={16} /> : <Play size={16} />}
+                  </button>
+                  <div className="trimmer-strip">
+                    <RangeStrip
+                      duration={duration}
+                      start={safeStart}
+                      end={safeEnd}
+                      position={currentTime}
+                      step={frameInterval}
+                      minLength={frameInterval}
+                      snap={snapToFrame}
+                      onChange={({ start, end }) => { setStartSec(String(start)); setEndSec(String(end)); }}
+                      onSeek={jumpToTime}
+                      onTogglePlay={toggleRegionPlay}
+                      renderLane={(tone) => <Filmstrip frames={timelineFrames} tone={tone} />}
+                    />
                   </div>
                 </div>
-
-                <div
-                  ref={timelineRef}
-                  style={{
-                    position: 'relative',
-                    border: '1px solid var(--border)',
-                    borderRadius: '10px',
-                    overflow: 'visible',
-                    marginBottom: '6px',
-                    background: 'var(--bg-card)',
-                    cursor: isDragging ? 'grabbing' : 'pointer',
-                    outline: 'none',
-                  }}
-                  onMouseDown={(e) => {
-                    if (e.button !== 0) return;
-                    beginDrag(getDragMode(getPointerX(e)), e);
-                  }}
-                  onTouchStart={(e) => {
-                    beginDrag(getDragMode(getPointerX(e)), e);
-                  }}
-                >
-                  <div style={{ position: 'relative', borderRadius: '10px', overflow: 'hidden' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${timelineFrames.length || 9}, minmax(0, 1fr))`, height: '72px' }}>
-                      {(timelineFrames.length > 0 ? timelineFrames : Array.from({ length: 9 }, () => ({ url: '' }))).map((frame, i) => (
-                        <div key={`tl-${i}`} style={{ borderRight: i === (timelineFrames.length || 9) - 1 ? 'none' : '1px solid rgba(255,255,255,0.06)' }}>
-                          {frame.url ? (
-                            <img src={frame.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'brightness(0.82)', pointerEvents: 'none' }} draggable={false} />
-                          ) : (
-                            <div style={{ width: '100%', height: '100%', background: 'linear-gradient(120deg, rgba(255,255,255,0.03), rgba(255,255,255,0.08), rgba(255,255,255,0.03))' }} />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div style={{
-                      position: 'absolute', top: 0, bottom: 0, left: 0,
-                      width: `${timelineStart}%`,
-                      background: 'rgba(0,0,0,0.45)',
-                      transition: isDragging ? 'none' : 'width 0.1s ease',
-                      pointerEvents: 'none',
-                    }} />
-
-                    <div style={{
-                      position: 'absolute', top: 0, bottom: 0,
-                      left: `${timelineStart + timelineWidth}%`, right: 0,
-                      background: 'rgba(0,0,0,0.45)',
-                      transition: isDragging ? 'none' : 'left 0.1s ease',
-                      pointerEvents: 'none',
-                    }} />
-
-                    <div style={{
-                      position: 'absolute', top: 0, bottom: 0,
-                      left: `${timelineStart}%`, width: `${timelineWidth}%`,
-                      background: 'linear-gradient(180deg, rgba(44,147,250,0.15), rgba(44,147,250,0.3))',
-                      borderTop: '2px solid rgba(44,147,250,0.6)',
-                      borderBottom: '2px solid rgba(44,147,250,0.6)',
-                      transition: isDragging ? 'none' : 'left 0.1s ease, width 0.1s ease',
-                      pointerEvents: 'none',
-                    }} />
-
-                    <button
-                      type="button"
-                      onMouseDown={(e) => beginDrag('start', e)}
-                      onTouchStart={(e) => beginDrag('start', e)}
-                      onMouseEnter={() => setHoveredHandle('start')}
-                      onMouseLeave={() => setHoveredHandle(null)}
-                      style={{
-                        position: 'absolute', top: 0, bottom: 0, left: `clamp(10px, ${timelineStart}%, calc(100% - 10px))`,
-                        width: '20px', marginLeft: '-10px', border: 'none', padding: 0,
-                        cursor: 'ew-resize', zIndex: 5,
-                        background: hoveredHandle === 'start' || draggingHandle === 'start'
-                          ? 'var(--accent)'
-                          : 'rgba(255,255,255,0.92)',
-                        boxShadow: hoveredHandle === 'start' || draggingHandle === 'start'
-                          ? '0 0 8px rgba(44,147,250,0.5)'
-                          : '0 0 0 1px rgba(0,0,0,0.25)',
-                        borderRadius: '2px',
-                        transition: 'background 0.1s, box-shadow 0.1s, transform 0.1s',
-                        transform: (hoveredHandle === 'start' || draggingHandle === 'start') ? 'scaleY(1.08)' : 'scaleY(1)',
-                      }}
-                      aria-label="Trim start handle"
-                    >
-                      <div style={{
-                        position: 'absolute', top: '50%', left: '50%',
-                        transform: 'translate(-50%, -50%)',
-                        display: 'flex', flexDirection: 'column', gap: '3px',
-                      }}>
-                        <div style={{ width: '2px', height: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '1px' }} />
-                        <div style={{ width: '2px', height: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '1px' }} />
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onMouseDown={(e) => beginDrag('end', e)}
-                      onTouchStart={(e) => beginDrag('end', e)}
-                      onMouseEnter={() => setHoveredHandle('end')}
-                      onMouseLeave={() => setHoveredHandle(null)}
-                      style={{
-                        position: 'absolute', top: 0, bottom: 0, left: `clamp(10px, ${timelineStart + timelineWidth}%, calc(100% - 10px))`,
-                        width: '20px', marginLeft: '-10px', border: 'none', padding: 0,
-                        cursor: 'ew-resize', zIndex: 5,
-                        background: hoveredHandle === 'end' || draggingHandle === 'end'
-                          ? 'var(--accent)'
-                          : 'rgba(255,255,255,0.92)',
-                        boxShadow: hoveredHandle === 'end' || draggingHandle === 'end'
-                          ? '0 0 8px rgba(44,147,250,0.5)'
-                          : '0 0 0 1px rgba(0,0,0,0.25)',
-                        borderRadius: '2px',
-                        transition: 'background 0.1s, box-shadow 0.1s, transform 0.1s',
-                        transform: (hoveredHandle === 'end' || draggingHandle === 'end') ? 'scaleY(1.08)' : 'scaleY(1)',
-                      }}
-                      aria-label="Trim end handle"
-                    >
-                      <div style={{
-                        position: 'absolute', top: '50%', left: '50%',
-                        transform: 'translate(-50%, -50%)',
-                        display: 'flex', flexDirection: 'column', gap: '3px',
-                      }}>
-                        <div style={{ width: '2px', height: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '1px' }} />
-                        <div style={{ width: '2px', height: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '1px' }} />
-                      </div>
-                    </button>
-
-                    <div style={{
-                      position: 'absolute', top: 0, bottom: 0, left: `${timelinePlayhead}%`,
-                      width: '2px', background: '#fff', zIndex: 4,
-                      opacity: playheadOverHandle ? 0 : 1,
-                      boxShadow: '0 0 0 1px rgba(0,0,0,0.2)',
-                      transition: 'opacity 0.08s',
-                      pointerEvents: 'none',
-                    }}>
-                      <div style={{
-                        position: 'absolute', top: '-1px', left: '50%', transform: 'translateX(-50%)',
-                        width: 0, height: 0,
-                        borderLeft: '5px solid transparent', borderRight: '5px solid transparent',
-                        borderTop: '6px solid var(--accent)',
-                        filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.3))',
-                      }} />
-                    </div>
-                  </div>
-
-                  {(hoveredHandle === 'start' || draggingHandle === 'start') && (
-                    <div style={{
-                      position: 'absolute', bottom: 'calc(100% - 2px)', left: `${timelineStart}%`,
-                      transform: 'translateX(-50%)',
-                      background: 'rgba(0,0,0,0.85)', color: '#fff',
-                      fontSize: '11px', fontWeight: 600, padding: '2px 6px',
-                      borderRadius: '4px', whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 3,
-                    }}>
-                      {formatTimelineTime(safeStart)}
-                    </div>
-                  )}
-
-                  {(hoveredHandle === 'end' || draggingHandle === 'end') && (
-                    <div style={{
-                      position: 'absolute', bottom: 'calc(100% - 2px)', left: `${timelineStart + timelineWidth}%`,
-                      transform: 'translateX(-50%)',
-                      background: 'rgba(0,0,0,0.85)', color: '#fff',
-                      fontSize: '11px', fontWeight: 600, padding: '2px 6px',
-                      borderRadius: '4px', whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 3,
-                    }}>
-                      {formatTimelineTime(safeEnd)}
-                    </div>
-                  )}
-
-                {timelineTicks.length > 0 && (
-                  <div style={{ position: 'relative', height: '16px', marginBottom: '4px', overflow: 'hidden' }}>
-                    {timelineTicks.map((t) => {
-                      const pct = (t / duration) * 100;
-                      const inRegion = t >= safeStart - 0.001 && t <= safeEnd + 0.001;
-                      return (
-                        <span
-                          key={t}
-                          style={{
-                            position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)',
-                            fontSize: '10px', color: 'var(--text-secondary)',
-                            opacity: inRegion ? 1 : 0.4, userSelect: 'none',
-                          }}
-                        >
-                          {formatTimelineTime(t)}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', marginBottom: '4px' }}>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    Start: <strong style={{ color: 'var(--text-primary)' }}>{formatTimelineTime(safeStart)}</strong>
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'center' }}>
-                    Playhead: <strong style={{ color: 'var(--text-primary)' }}>{formatTimelineTime(currentTime)}</strong>
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', textAlign: 'right' }}>
-                    End: <strong style={{ color: 'var(--text-primary)' }}>{formatTimelineTime(safeEnd)}</strong>
-                  </div>
+                <div className="trimmer-meta">
+                  <span className="trimmer-summary">
+                    Selection <strong>{formatStripTime(clipDuration, duration)}</strong> of {formatStripTime(duration, duration)}
+                  </span>
+                  <label className="toggle-chip" title="Snap the range to whole frames at the chosen FPS">
+                    <input type="checkbox" checked={snapEnabled} onChange={(e) => setSnapEnabled(e.target.checked)} />
+                    Snap to frames
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={safeStart <= 0.001 && safeEnd >= duration - 0.001}
+                    onClick={() => { setStartSec('0'); setEndSec(String(duration)); }}
+                  >
+                    Whole clip
+                  </button>
                 </div>
-
-                <div style={{ fontSize: '10px', color: 'var(--text-secondary)', opacity: 0.5 }}>
-                  Arrows nudge handles (Shift+arrow for end) &middot; Space play/pause &middot; Home/End jump
+                <div className="trimmer-hint">
+                  ←/→ move the start · Shift+←/→ the end · Space plays the selection on a loop · Home/End jump
                 </div>
               </div>
-                </div>
-              )}
+            )}
 
             {isStaticImage && (
               <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', marginBottom: '12px' }}>
@@ -932,7 +445,7 @@ export default function GifMaker({ sessionId, isAdmin }) {
             {error && (
               <div style={{
                 color: 'var(--error)', marginTop: '8px', padding: '10px',
-                background: 'rgba(231, 76, 60, 0.1)', borderRadius: '6px', fontSize: '13px',
+                background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px', fontSize: '13px',
               }}>
                 {error}
               </div>

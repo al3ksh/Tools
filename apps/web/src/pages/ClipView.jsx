@@ -101,7 +101,7 @@ function ClipView({ isAdmin }) {
           <h2 style={{ marginBottom: '10px', color: '#fff' }}>Clip Not Found</h2>
           <p style={{ color: '#888', marginBottom: '20px' }}>{error}</p>
           <Link to="/" style={{
-            color: '#3498db', textDecoration: 'none', display: 'inline-flex',
+            color: 'var(--accent-text)', textDecoration: 'none', display: 'inline-flex',
             alignItems: 'center', gap: '8px'
           }}>
             Go to Tools
@@ -201,12 +201,12 @@ function ClipView({ isAdmin }) {
               onClick={handleDelete}
               style={{
                 display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px',
-                background: 'rgba(231,76,60,0.15)', border: '1px solid rgba(231,76,60,0.3)',
-                color: '#e74c3c', padding: '8px 14px', borderRadius: '6px',
+                background: 'rgba(231, 170, 164, 0.18)', border: '1px solid rgba(231, 170, 164, 0.36)',
+                color: 'var(--error)', padding: '8px 14px', borderRadius: '6px',
                 cursor: 'pointer', transition: 'background 0.15s',
               }}
-              onMouseOver={(e) => e.currentTarget.style.background = 'rgba(231,76,60,0.25)'}
-              onMouseOut={(e) => e.currentTarget.style.background = 'rgba(231,76,60,0.15)'}
+              onMouseOver={(e) => e.currentTarget.style.background = 'rgba(231, 170, 164, 0.3)'}
+              onMouseOut={(e) => e.currentTarget.style.background = 'rgba(231, 170, 164, 0.18)'}
             >
               <Trash2 size={14} /> Delete
             </button>
