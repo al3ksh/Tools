@@ -95,7 +95,7 @@ Tools/
 
 ### Guest (default)
 - Unique session stored in `localStorage` (persists until browser data is cleared)
-- Files auto-expire (1h for jobs/drops, 24h for clips, 7d for shortlinks)
+- Files auto-expire (1h for jobs/drops, 24h for clips, 7d for shortlinks), or can be deleted earlier by the same session
 - Upload size limits apply
 
 | Resource | Guest Limit | Admin Limit |
@@ -173,15 +173,17 @@ sudo usermod -aG docker $USER
 | `POST` | `/api/converter` | Create conversion job |
 | `POST` | `/api/shorten` | Create short link |
 | `GET` | `/api/shortlinks/list` | List short links |
-| `DELETE` | `/api/shortlinks/:slug` | Delete short link (admin) |
+| `DELETE` | `/api/shortlinks/:slug` | Delete short link (its session or admin) |
 | `POST` | `/api/drop/upload` | Upload a drop file |
 | `POST` | `/api/drop/upload-chunk` | Upload one chunk of a drop |
 | `POST` | `/api/drop/finalize` | Finish a chunked drop |
 | `GET` | `/api/drop/list` | List drops |
+| `DELETE` | `/api/drop/:token` | Delete a drop (its session or admin) |
 | `GET` | `/api/drop/:token/download` | Download a drop |
 | `POST` | `/api/clip/upload-chunk` | Upload video chunk |
 | `POST` | `/api/clip/finalize` | Finalize clip (trim + process) |
 | `GET` | `/api/clip/:token/stream` | Stream clip video |
+| `DELETE` | `/api/clip/:token` | Delete a clip (its session or admin) |
 | `POST` | `/api/gif/info` | Get video info for GIF |
 | `POST` | `/api/gif/process` | Generate GIF |
 | `POST` | `/api/pdf/info` | PDF page info |
