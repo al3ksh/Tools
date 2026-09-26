@@ -1,4 +1,5 @@
-import { ArrowUpRight, Download, Github } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowUpRight, Download, Github, X } from 'lucide-react';
 
 // Tools is the web edition of Kadron: same palette, same controls, and a
 // clear way to the desktop app.
@@ -45,10 +46,28 @@ export function KadronPromo() {
   );
 }
 
-// Dashboard banner: what Kadron is and where to get it.
+const HERO_DISMISSED = 'kadronHeroDismissed';
+
+// Dashboard banner: what Kadron is and where to get it. Closing it is
+// remembered; the sidebar card still links to Kadron.
 export function KadronHero() {
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(HERO_DISMISSED) === '1');
+  const [closing, setClosing] = useState(false);
+  if (dismissed) return null;
+
+  const close = () => {
+    localStorage.setItem(HERO_DISMISSED, '1');
+    setClosing(true);
+  };
+
   return (
-    <section className="kadron-hero">
+    <section
+      className={`kadron-hero${closing ? ' is-closing' : ''}`}
+      onAnimationEnd={(e) => { if (closing && e.target === e.currentTarget) setDismissed(true); }}
+    >
+      <button type="button" className="kadron-hero-close" onClick={close} aria-label="Hide this banner" title="Hide">
+        <X size={16} />
+      </button>
       <div className="kadron-hero-copy">
         <div className="kadron-eyebrow"><KadronMark size={18} /> POWERED BY KADRON</div>
         <h3>The desktop studio behind Tools</h3>
