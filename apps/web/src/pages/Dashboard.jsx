@@ -1,10 +1,22 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api, formatBytes, formatDate, getFileUrl } from '../api';
 import { Link } from 'react-router-dom';
-import { LayoutDashboard, RefreshCw, FolderOpen, Clock, CheckCircle, XCircle, Zap, Download, FileAudio, Link as LinkIcon, Database, ClipboardList, Settings, Inbox, Archive, PackageOpen, Film } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, FolderOpen, Clock, CheckCircle, XCircle, Zap, Download, FileAudio, Link as LinkIcon, Database, ClipboardList, Settings, Inbox, Archive, PackageOpen, Film, QrCode, Files, Sparkles, ArrowUpRight } from 'lucide-react';
 import JobProgress from '../components/JobProgress';
 import Pagination from '../components/Pagination';
 import { KadronHero } from '../components/Kadron';
+
+const TOOLS = [
+  { to: '/downloader', icon: Download, title: 'Downloader', desc: 'YouTube, TikTok, Instagram, X and 1000+ sites' },
+  { to: '/converter', icon: FileAudio, title: 'Audio Converter', desc: 'MP3, FLAC, WAV, Opus, trimmed on the waveform' },
+  { to: '/compress', icon: PackageOpen, title: 'Compressor', desc: 'Shrink video, audio and images to a target size' },
+  { to: '/clips', icon: Film, title: 'Clips', desc: 'Trim on a filmstrip and share with embeds' },
+  { to: '/gif', icon: Sparkles, title: 'GIF Maker', desc: 'Pick a segment, preview, export' },
+  { to: '/pdf', icon: Files, title: 'PDF Editor', desc: 'Edit pages, merge, extract, images to PDF' },
+  { to: '/drop', icon: FolderOpen, title: 'Drop', desc: 'Share a file with a link, optional password' },
+  { to: '/shortener', icon: LinkIcon, title: 'Shortener', desc: 'Short links with custom slugs and clicks' },
+  { to: '/qr', icon: QrCode, title: 'QR Code', desc: 'PNG or SVG, custom colours' },
+];
 
 function Dashboard({ sessionId, isAdmin }) {
   const [jobs, setJobs] = useState([]);
@@ -125,90 +137,25 @@ function Dashboard({ sessionId, isAdmin }) {
         {/* Quick Actions */}
         <div className="card">
           <div className="card-header">
-            <div className="card-title"><Zap size={18} /> Quick Actions</div>
+            <div className="card-title"><Zap size={18} /> Tools</div>
           </div>
           <div className="card-body">
-            <div className="quick-actions">
-              <Link to="/downloader" className="quick-action">
-                <div className="quick-action-icon"><Download size={36} /></div>
-                <div className="quick-action-title">Download Media</div>
-                <div className="quick-action-desc">YouTube, TikTok, Instagram, Twitter & more</div>
-              </Link>
-              <Link to="/converter" className="quick-action">
-                <div className="quick-action-icon"><FileAudio size={36} /></div>
-                <div className="quick-action-title">Convert Audio</div>
-                <div className="quick-action-desc">MP3, WAV, FLAC, Opus with normalization</div>
-              </Link>
-              <Link to="/drop" className="quick-action">
-                <div className="quick-action-icon"><FolderOpen size={36} /></div>
-                <div className="quick-action-title">Share File</div>
-                <div className="quick-action-desc">Upload and share files up to 50MB</div>
-              </Link>
-              <Link to="/clips" className="quick-action">
-                <div className="quick-action-icon"><Film size={36} /></div>
-                <div className="quick-action-title">Clips</div>
-                <div className="quick-action-desc">Upload, trim, and share video clips</div>
-              </Link>
+            <div className="tool-grid">
+              {TOOLS.map(({ to, icon: Icon, title, desc }) => (
+                <Link key={to} to={to} className="tool-tile">
+                  <span className="tool-tile-icon"><Icon size={20} /></span>
+                  <span className="tool-tile-text">
+                    <span className="tool-tile-title">{title}</span>
+                    <span className="tool-tile-desc">{desc}</span>
+                  </span>
+                  <ArrowUpRight size={16} className="tool-tile-arrow" />
+                </Link>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Storage */}
-        {storage && (
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title"><Database size={18} /> {isAdmin ? 'Storage Usage' : 'Your Usage'}</div>
-              {storage.total && <div className="stat-info">{storage.total.formatted}</div>}
-            </div>
-            <div className="card-body">
-              {isAdmin && storage.disk && (
-                <div style={{ marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                    <span>Disk</span>
-                    <span>{storage.disk.usedFormatted} / {storage.disk.totalFormatted} ({storage.disk.usedPercent}%)</span>
-                  </div>
-                  <div className="progress-bar" style={{ height: '8px' }}>
-                    <div className="progress-fill" style={{
-                      width: `${Math.min(storage.disk.usedPercent, 100)}%`,
-                      backgroundColor: storage.disk.usedPercent > 90 ? 'var(--error)' : storage.disk.usedPercent > 70 ? 'var(--warning)' : 'var(--accent)'
-                    }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                    <span>Free: {storage.disk.availableFormatted}</span>
-                  </div>
-                </div>
-              )}
-              <div className="storage-bar">
-                {Object.entries(storage.directories || {}).map(([dir, info]) => {
-                  const percent = storage.total.bytes > 0 ? (info.bytes / storage.total.bytes) * 100 : 0;
-                  if (percent < 1) return null;
-                  return (
-                    <div
-                      key={dir}
-                      className={`storage-segment ${dir}`}
-                      style={{ width: `${percent}%` }}
-                      title={`${dir}: ${info.formatted}`}
-                    />
-                  );
-                })}
-              </div>
-              <div className="storage-legend">
-                {Object.entries(storage.directories || {}).map(([dir, info]) => (
-                  <div key={dir} className="storage-legend-item">
-                    <div className={`storage-legend-color`} style={{
-                      background: dir === 'downloads' ? 'var(--accent)' :
-                        dir === 'converted' ? 'var(--success)' :
-                          dir === 'clips' ? '#a78bfa' :
-                            dir === 'uploads' ? 'var(--warning)' : 'var(--error)'
-                    }} />
-                    <span>{dir}: {info.formatted}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
+        <div className="dashboard-columns">
         {/* Recent Jobs */}
         <div className="card">
           <div className="card-header">
@@ -308,6 +255,63 @@ function Dashboard({ sessionId, isAdmin }) {
               onPageChange={setRecentJobsPage}
             />
           )}
+        </div>
+        {/* Storage */}
+        {storage && (
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title"><Database size={18} /> {isAdmin ? 'Storage Usage' : 'Your Usage'}</div>
+              {storage.total && <div className="stat-info">{storage.total.formatted}</div>}
+            </div>
+            <div className="card-body">
+              {isAdmin && storage.disk && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                    <span>Disk</span>
+                    <span>{storage.disk.usedFormatted} / {storage.disk.totalFormatted} ({storage.disk.usedPercent}%)</span>
+                  </div>
+                  <div className="progress-bar" style={{ height: '8px' }}>
+                    <div className="progress-fill" style={{
+                      width: `${Math.min(storage.disk.usedPercent, 100)}%`,
+                      backgroundColor: storage.disk.usedPercent > 90 ? 'var(--error)' : storage.disk.usedPercent > 70 ? 'var(--warning)' : 'var(--accent)'
+                    }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    <span>Free: {storage.disk.availableFormatted}</span>
+                  </div>
+                </div>
+              )}
+              <div className="storage-bar">
+                {Object.entries(storage.directories || {}).map(([dir, info]) => {
+                  const percent = storage.total.bytes > 0 ? (info.bytes / storage.total.bytes) * 100 : 0;
+                  if (percent < 1) return null;
+                  return (
+                    <div
+                      key={dir}
+                      className={`storage-segment ${dir}`}
+                      style={{ width: `${percent}%` }}
+                      title={`${dir}: ${info.formatted}`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="storage-legend">
+                {Object.entries(storage.directories || {}).map(([dir, info]) => (
+                  <div key={dir} className="storage-legend-item">
+                    <div className={`storage-legend-color`} style={{
+                      background: dir === 'downloads' ? 'var(--accent)' :
+                        dir === 'converted' ? 'var(--success)' :
+                          dir === 'clips' ? '#a78bfa' :
+                            dir === 'uploads' ? 'var(--warning)' : 'var(--error)'
+                    }} />
+                    <span>{dir}: {info.formatted}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         </div>
       </div>
     </>

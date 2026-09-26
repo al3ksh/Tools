@@ -329,8 +329,14 @@ export const api = {
   getAllJobs: () => fetchApi('/jobs?all=true'),
   getAllDrops: () => fetchApi('/drop/list?all=true'),
   getAllShortlinks: () => fetchApi('/shortlinks/list?all=true'),
-  deleteShortlink: (slug) => fetchApi(`/shortlinks/${slug}`, { method: 'DELETE' }),
-  deleteDrop: (token) => fetchApi(`/drop/${token}`, { method: 'DELETE' }),
+  deleteShortlink: (slug, sessionId) => fetchApi(`/shortlinks/${slug}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ sessionId }),
+  }),
+  deleteDrop: (token, sessionId) => fetchApi(`/drop/${token}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ sessionId }),
+  }),
 
   // Clips
   getClips: (sessionId) => fetchApi(`/clip/list${sessionId ? `?sessionId=${sessionId}` : ''}`),

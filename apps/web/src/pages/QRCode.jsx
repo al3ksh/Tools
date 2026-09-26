@@ -220,12 +220,7 @@ export default function QRCode() {
       </div>
 
       {toast && (
-        <div style={{
-          position: 'fixed', bottom: '20px', right: '20px', zIndex: 9999,
-          padding: '10px 18px', borderRadius: '8px', fontWeight: 500, fontSize: '13px',
-          background: toast.type === 'error' ? 'var(--error)' : 'var(--accent)',
-          color: '#fff', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-        }}>
+        <div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}>
           {toast.message}
         </div>
       )}

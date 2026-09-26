@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { applyStoredVolume } from '../components/VolumeControl';
 import { api, formatDate, getFileUrl } from '../api';
 import { RefreshCw, FolderOpen, Upload, CheckCircle, Clock, Settings, AlertTriangle, List, Download, Trash2, ClipboardList, PackageOpen, Volume2, XCircle, XSquare } from 'lucide-react';
 import AudioTrimmer from '../components/AudioTrimmer';
@@ -109,6 +110,7 @@ function Converter({ sessionId, isAdmin }) {
       const wavUrl = getFileUrl(jobId, 'preview.wav');
       if (audioRef.current) {
         audioRef.current.src = wavUrl;
+        applyStoredVolume(audioRef.current);
         audioRef.current.play();
       }
     } catch (err) {

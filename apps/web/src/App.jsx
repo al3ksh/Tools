@@ -180,10 +180,14 @@ function App() {
     return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
   }
 
-  function getContrastTextColor(hex) {
-    return getLuminance(hex) > 0.35
-      ? `color-mix(in srgb, ${hex}, #000 45%)`
-      : `color-mix(in srgb, ${hex}, #fff 50%)`;
+  // Accent as text: bright accents read on the dark theme as they are, dark
+  // ones get lifted; on the light theme it is the other way round.
+  function getAccentTextOnDark(hex) {
+    return getLuminance(hex) > 0.35 ? hex : `color-mix(in srgb, ${hex}, #fff 50%)`;
+  }
+
+  function getAccentTextOnLight(hex) {
+    return getLuminance(hex) > 0.2 ? `color-mix(in srgb, ${hex}, #000 50%)` : hex;
   }
 
   function getContrastBtnText(hex) {
@@ -191,16 +195,16 @@ function App() {
   }
 
   useEffect(() => {
-    if (accentColor) {
-      document.documentElement.style.setProperty('--accent', accentColor);
-      document.documentElement.style.setProperty('--accent-hover', accentColor);
-      document.documentElement.style.setProperty('--accent-text', getContrastTextColor(accentColor));
-      document.documentElement.style.setProperty('--accent-btn-text', getContrastBtnText(accentColor));
-    } else {
-      document.documentElement.style.removeProperty('--accent');
-      document.documentElement.style.removeProperty('--accent-hover');
-      document.documentElement.style.removeProperty('--accent-text');
-      document.documentElement.style.removeProperty('--accent-btn-text');
+    const root = document.documentElement.style;
+    const vars = accentColor ? {
+      '--accent': accentColor,
+      '--accent-btn-text': getContrastBtnText(accentColor),
+      '--accent-text-on-dark': getAccentTextOnDark(accentColor),
+      '--accent-text-on-light': getAccentTextOnLight(accentColor),
+    } : {};
+    for (const name of ['--accent', '--accent-btn-text', '--accent-text-on-dark', '--accent-text-on-light']) {
+      if (vars[name]) root.setProperty(name, vars[name]);
+      else root.removeProperty(name);
     }
   }, [accentColor]);
 

@@ -5,6 +5,7 @@ import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import FileUploader from '../components/FileUploader';
 import useToast from '../hooks/useToast';
+import ConfirmDelete from '../components/ConfirmDelete';
 
 function Drop({ sessionId, isAdmin }) {
   const [file, setFile] = useState(null);
@@ -28,6 +29,16 @@ function Drop({ sessionId, isAdmin }) {
 
   const [myDropsPage, setMyDropsPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
+
+  const handleDelete = async (drop) => {
+    try {
+      await api.deleteDrop(drop.token, sessionId);
+      showToast('File deleted');
+      fetchDrops();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
 
   const fetchDrops = async () => {
     try {
@@ -327,6 +338,7 @@ function Drop({ sessionId, isAdmin }) {
                               >
                                 <Copy size={14} />
                               </button>
+                              <ConfirmDelete onConfirm={() => handleDelete(drop)} title="Delete file" />
                             </div>
                           )}
                         </td>

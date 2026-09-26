@@ -1,13 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Film, Upload, Play, Pause, Copy, Trash2, Clock, CheckCircle, XCircle, Scissors, Video, Loader, Eye, ExternalLink } from 'lucide-react';
+import { Film, Upload, Play, Pause, Copy, Clock, CheckCircle, XCircle, Scissors, Video, Loader, Eye, ExternalLink } from 'lucide-react';
 import { api, formatBytes, formatDate, getClipUrl, getClipStreamUrl, uploadChunks, finalizeUpload } from '../api';
 import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import FileUploader from '../components/FileUploader';
+import ConfirmDelete from '../components/ConfirmDelete';
 import useToast from '../hooks/useToast';
 import JobProgress from '../components/JobProgress';
 import RangeStrip, { Filmstrip, formatStripTime } from '../components/RangeStrip';
+import VolumeControl from '../components/VolumeControl';
 import useFilmstrip from '../hooks/useFilmstrip';
 
 function formatTime(seconds) {
@@ -367,6 +369,7 @@ function Clips({ sessionId, isAdmin }) {
                         <span className="trimmer-summary">
                           Clip <strong>{formatStripTime(trimDuration, duration)}</strong> of {formatStripTime(duration, duration)}
                         </span>
+                        <VolumeControl mediaRef={videoRef} />
                         <button
                           type="button"
                           className="btn btn-secondary btn-sm"
@@ -437,8 +440,8 @@ function Clips({ sessionId, isAdmin }) {
                   {safeTrimEnd > trimStart && safeTrimEnd > 0 && isFinite(duration) && duration > 0 && (
                     <div style={{
                       fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px',
-                      padding: '8px 10px', borderRadius: '6px', background: 'rgba(201, 242, 122, 0.07)',
-                      border: '1px solid rgba(201, 242, 122, 0.14)'
+                      padding: '8px 10px', borderRadius: '6px', background: 'color-mix(in srgb, var(--accent) 7%, transparent)',
+                      border: '1px solid color-mix(in srgb, var(--accent) 14%, transparent)'
                     }}>
                       <Video size={12} style={{ marginRight: '4px' }} />
                       Trimmed: {formatTime(trimDuration)} ({Math.round(trimDuration / duration * 100)}% of original), ffmpeg trim
@@ -621,6 +624,11 @@ function Clips({ sessionId, isAdmin }) {
                           </span>
                           <span>{formatBytes(clip.size)}</span>
                           <span>{formatDate(clip.createdAt)}</span>
+                          <ConfirmDelete
+                            onConfirm={() => handleDelete(clip)}
+                            title="Delete clip"
+                            className="btn btn-danger btn-xs"
+                          />
                         </div>
                         {(() => {
                           const exp = getExpiryStyle(clip.expiresAt);

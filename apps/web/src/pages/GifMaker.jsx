@@ -4,6 +4,7 @@ import { api, formatBytes } from '../api';
 import FileUploader from '../components/FileUploader';
 import JobProgress from '../components/JobProgress';
 import RangeStrip, { Filmstrip, formatStripTime } from '../components/RangeStrip';
+import VolumeControl from '../components/VolumeControl';
 import useFilmstrip from '../hooks/useFilmstrip';
 
 function clamp(value, min, max, fallback) {
@@ -350,6 +351,7 @@ export default function GifMaker({ sessionId, isAdmin }) {
                   <span className="trimmer-summary">
                     Selection <strong>{formatStripTime(clipDuration, duration)}</strong> of {formatStripTime(duration, duration)}
                   </span>
+                  <VolumeControl mediaRef={videoRef} />
                   <label className="toggle-chip" title="Snap the range to whole frames at the chosen FPS">
                     <input type="checkbox" checked={snapEnabled} onChange={(e) => setSnapEnabled(e.target.checked)} />
                     Snap to frames

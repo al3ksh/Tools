@@ -72,13 +72,18 @@ router.get('/list', (req, res) => {
   }
 });
 
-// DELETE /api/shortlinks/:slug - admin-only delete
+// DELETE /api/shortlinks/:slug - the creator's session or an admin
 router.delete('/:slug', (req, res) => {
   try {
-    if (!req.isAdmin) {
-      return res.status(403).json({ error: 'Admin only' });
-    }
     const { slug } = req.params;
+    const link = statements.getShortlink.get(slug);
+    if (!link) {
+      return res.status(404).json({ error: 'Link not found' });
+    }
+    const sessionId = (req.body && req.body.sessionId) || req.query.sessionId;
+    if (!req.isAdmin && (!link.sessionId || link.sessionId !== sessionId)) {
+      return res.status(403).json({ error: 'Not your link' });
+    }
     statements.deleteShortlink.run(slug);
     res.json({ success: true });
   } catch (err) {

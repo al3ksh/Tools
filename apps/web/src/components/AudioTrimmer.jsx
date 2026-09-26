@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Pause, Play, Repeat } from 'lucide-react';
 import RangeStrip, { formatStripTime } from './RangeStrip';
+import VolumeControl from './VolumeControl';
 
 const PEAK_BUCKETS = 1600;
 
@@ -206,6 +207,7 @@ export default function AudioTrimmer({ file, start, end, onChange }) {
           Selection <strong>{formatStripTime(rangeEnd - rangeStart, duration)}</strong> of {formatStripTime(duration, duration)}
           {waveError && <span className="trimmer-note"> · {waveError}</span>}
         </span>
+        <VolumeControl mediaRef={audioRef} />
         <label className="toggle-chip">
           <input type="checkbox" checked={looping} onChange={(e) => setLooping(e.target.checked)} />
           <Repeat size={13} /> Loop

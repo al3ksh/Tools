@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Files, Upload, Layers, Scissors, RotateCw, Trash2, Image, X, Clock, Download, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Eye, GripVertical, RotateCcw, File as FileIcon } from 'lucide-react';
-import { api, formatBytes, downloadBlob } from '../api';
+import { Files, Layers, Scissors, RotateCw, Trash2, Image, X, Clock, Download, ZoomIn, ZoomOut, Eye, GripVertical, RotateCcw, File as FileIcon } from 'lucide-react';
+import { api, downloadBlob } from '../api';
 import * as pdfjsLib from 'pdfjs-dist';
 import FileUploader from '../components/FileUploader';
 import useToast from '../hooks/useToast';
 import JobProgress from '../components/JobProgress';
+import { withIds, openPdf, move, SortableGrid, AddTile, PdfFileCard, ImageFileCard, PagePicker, pagesToRange } from '../components/PdfBoards';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
 
@@ -60,7 +61,7 @@ function PageThumb({ pageNum, positionIndex, pdfDoc, selected, rotation, onToggl
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
         padding: '8px', borderRadius: '8px', cursor: 'pointer', userSelect: 'none',
         border: `2px solid ${selected ? 'var(--accent)' : isDragOver ? 'var(--accent)' : 'var(--border)'}`,
-        background: selected ? 'rgba(59, 130, 246, 0.08)' : isDragOver ? 'rgba(59, 130, 246, 0.04)' : 'var(--bg-card)',
+        background: selected ? 'var(--accent-wash)' : isDragOver ? 'var(--accent-faint)' : 'var(--bg-card)',
         transition: 'border-color 0.15s, background 0.15s, opacity 0.15s',
         position: 'relative', minWidth: THUMB_WIDTH + 16,
         ...style,
@@ -72,7 +73,7 @@ function PageThumb({ pageNum, positionIndex, pdfDoc, selected, rotation, onToggl
       </div>
       <div style={{
         position: 'absolute', bottom: '32px', right: '6px',
-        background: 'var(--accent)', color: '#fff', borderRadius: '4px',
+        background: 'var(--accent)', color: 'var(--accent-btn-text)', borderRadius: '4px',
         padding: '1px 6px', fontSize: '11px', fontWeight: 700, lineHeight: '18px',
         boxShadow: '0 1px 3px rgba(0,0,0,0.3)', zIndex: 2,
       }}>
@@ -151,7 +152,7 @@ function PagePreviewModal({ pdfDoc, pageNum, rotation, onClose }) {
 const MODES = [
   { id: 'edit', label: 'Visual Editor', icon: Eye, desc: 'View, reorder, rotate & remove pages' },
   { id: 'merge', label: 'Merge', icon: Layers, desc: 'Combine multiple PDFs' },
-  { id: 'split', label: 'Split', icon: Scissors, desc: 'Extract page ranges' },
+  { id: 'split', label: 'Extract pages', icon: Scissors, desc: 'Pick pages for a new PDF' },
   { id: 'images', label: 'Images → PDF', icon: Image, desc: 'Convert images to PDF' },
 ];
 
@@ -167,19 +168,18 @@ export default function PDFEditor({ sessionId, isAdmin }) {
   const [previewPage, setPreviewPage] = useState(null);
   const [dragIdx, setDragIdx] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
-  const [mergeFiles, setMergeFiles] = useState([]);
-  const [mergeInfos, setMergeInfos] = useState([]);
+  const [mergeItems, setMergeItems] = useState([]);
+  const [mergePages, setMergePages] = useState({});
   const [splitFile, setSplitFile] = useState(null);
-  const [splitPageCount, setSplitPageCount] = useState(0);
+  const [splitDoc, setSplitDoc] = useState(null);
+  const [splitSelected, setSplitSelected] = useState(new Set());
   const [splitInput, setSplitInput] = useState('');
-  const [imageFiles, setImageFiles] = useState([]);
+  const [imageItems, setImageItems] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [currentJob, setCurrentJob] = useState(null);
   const [jobTitle, setJobTitle] = useState('');
   const [error, setError] = useState('');
   const [toast, showToast] = useToast();
-  const [dragActive, setDragActive] = useState(false);
-  const fileInputRef = useRef(null);
 
   // ===== VISUAL EDITOR =====
   const loadPdf = useCallback(async (file) => {
@@ -298,26 +298,19 @@ export default function PDFEditor({ sessionId, isAdmin }) {
   };
 
   // ===== MERGE =====
-  const addMergeFiles = async (newFiles) => {
-    const arr = Array.from(newFiles);
-    setMergeFiles(prev => [...prev, ...arr]);
-    const infos = [];
-    for (const f of arr) {
-      try {
-        const info = await api.pdfInfo(f, sessionId);
-        infos.push({ name: f.name, size: f.size, pageCount: info.pageCount });
-      } catch { infos.push({ name: f.name, size: f.size, pageCount: null }); }
-    }
-    setMergeInfos(prev => [...prev, ...infos]);
-  };
+  const isPdf = (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+  const isImage = (f) => /^image\/(jpeg|png)$/.test(f.type) || /\.(jpe?g|png)$/i.test(f.name);
 
-  const moveMergeFile = (from, to) => {
-    if (to < 0 || to >= mergeFiles.length) return;
-    const nf = [...mergeFiles]; const [m] = nf.splice(from, 1); nf.splice(to, 0, m);
-    setMergeFiles(nf);
-    const ni = [...mergeInfos]; const [mi] = ni.splice(from, 1); ni.splice(to, 0, mi);
-    setMergeInfos(ni);
+  const addMergeFiles = (files) => {
+    const pdfs = Array.from(files).filter(isPdf);
+    if (pdfs.length < files.length) showToast('Only PDF files can be merged', 'error');
+    if (pdfs.length) setMergeItems((prev) => [...prev, ...withIds(pdfs)]);
   };
+  const removeMergeItem = (id) => {
+    setMergeItems((prev) => prev.filter((it) => it.id !== id));
+    setMergePages((prev) => { const next = { ...prev }; delete next[id]; return next; });
+  };
+  const mergeTotalPages = mergeItems.reduce((sum, it) => sum + (mergePages[it.id] || 0), 0);
 
   const handleEditSelect = (selected) => {
     if (!selected) {
@@ -333,66 +326,61 @@ export default function PDFEditor({ sessionId, isAdmin }) {
     loadPdf(selected);
   };
 
-  const handleMergeSelect = (selected) => {
-    if (!selected || selected.length === 0) {
-      setMergeFiles([]);
-      setMergeInfos([]);
-      return;
-    }
-    addMergeFiles(selected);
+  // ===== SPLIT =====
+  const clearSplit = () => {
+    if (splitDoc) splitDoc.destroy();
+    setSplitFile(null);
+    setSplitDoc(null);
+    setSplitSelected(new Set());
+    setSplitInput('');
   };
 
   const handleSplitSelect = async (selected) => {
-    if (!selected) {
-      setSplitFile(null);
-      setSplitPageCount(0);
-      setSplitInput('');
-      return;
-    }
+    clearSplit();
+    if (!selected) return;
     setSplitFile(selected);
     try {
-      const info = await api.pdfInfo(selected, sessionId);
-      setSplitPageCount(info.pageCount);
-    } catch {
-      setSplitPageCount(0);
+      setSplitDoc(await openPdf(selected));
+      setError('');
+    } catch (err) {
+      setError('Cannot read this PDF: ' + err.message);
     }
   };
 
-  const handleImagesSelect = (selected) => {
-    if (!selected || selected.length === 0) {
-      setImageFiles([]);
-      return;
-    }
-    setImageFiles(selected);
+  const setSplitPages = (pages) => {
+    setSplitSelected(pages);
+    setSplitInput(pagesToRange(pages));
+  };
+
+  const handleSplitInput = (value) => {
+    setSplitInput(value);
+    if (splitDoc) setSplitSelected(new Set(parsePageRange(value, splitDoc.numPages)));
+  };
+
+  const selectSplitPages = (which) => {
+    const count = splitDoc?.numPages || 0;
+    const all = Array.from({ length: count }, (_, i) => i + 1);
+    if (which === 'all') setSplitPages(new Set(all));
+    else if (which === 'odd') setSplitPages(new Set(all.filter((p) => p % 2 === 1)));
+    else if (which === 'even') setSplitPages(new Set(all.filter((p) => p % 2 === 0)));
+    else setSplitPages(new Set());
+  };
+
+  // ===== IMAGES =====
+  const addImages = (files) => {
+    const images = Array.from(files).filter(isImage);
+    if (images.length < files.length) showToast('Only JPG and PNG images can be added', 'error');
+    if (images.length) setImageItems((prev) => [...prev, ...withIds(images)]);
   };
 
   // ===== GENERAL =====
-  const handleFileDrop = (e) => {
-    e.preventDefault();
-    setDragActive(false);
-    const files = e.dataTransfer?.files;
-    if (!files?.length) return;
-    if (mode === 'edit') loadPdf(files[0]);
-    else if (mode === 'merge') addMergeFiles(files);
-    else if (mode === 'split') { setSplitFile(files[0]); api.pdfInfo(files[0], sessionId).then(i => setSplitPageCount(i.pageCount)).catch(() => {}); }
-    else if (mode === 'images') setImageFiles(prev => [...prev, ...Array.from(files)]);
-  };
-
-  const handleFileInput = (e) => {
-    const files = e.target.files;
-    if (!files?.length) return;
-    if (mode === 'edit') loadPdf(files[0]);
-    else if (mode === 'merge') addMergeFiles(files);
-    else if (mode === 'split') { setSplitFile(files[0]); api.pdfInfo(files[0], sessionId).then(i => setSplitPageCount(i.pageCount)).catch(() => {}); }
-    else if (mode === 'images') setImageFiles(prev => [...prev, ...Array.from(files)]);
-    e.target.value = '';
-  };
-
   const resetAll = () => {
     setPdfFile(null); setPdfDoc(null); setPageCount(0); setPageOrder([]); setRotations({});
-    setDeletedPages(new Set()); setSelectedPages(new Set()); setMergeFiles([]); setMergeInfos([]);
-    setSplitFile(null); setSplitPageCount(0); setSplitInput(''); setImageFiles([]); setError(''); setCurrentJob(null);
+    setDeletedPages(new Set()); setSelectedPages(new Set()); setMergeItems([]); setMergePages({});
+    clearSplit(); setImageItems([]); setError(''); setCurrentJob(null);
   };
+
+  const baseName = (file, fallback) => (file ? file.name.replace(/\.[^.]+$/, '') : fallback);
 
   const handleProcess = async () => {
     setProcessing(true);
@@ -401,37 +389,34 @@ export default function PDFEditor({ sessionId, isAdmin }) {
     try {
       let blob, filename;
       if (mode === 'merge') {
-        if (mergeFiles.length < 2) throw new Error('Add at least 2 PDFs');
+        if (mergeItems.length < 2) throw new Error('Add at least 2 PDFs');
         setJobTitle('Merging PDF');
-        blob = await api.pdfMerge(mergeFiles, sessionId, { onJobUpdate: setCurrentJob });
-        filename = 'merged.pdf';
+        blob = await api.pdfMerge(mergeItems.map((it) => it.file), sessionId, { onJobUpdate: setCurrentJob });
+        filename = `${baseName(mergeItems[0].file, 'merged')} (merged).pdf`;
       } else if (mode === 'split') {
-        if (!splitFile) throw new Error('Upload a PDF first');
-        const pages = parsePageRange(splitInput, splitPageCount);
-        if (!pages.length) throw new Error('Enter valid page numbers');
+        if (!splitFile) throw new Error('Choose a PDF first');
+        const pages = [...splitSelected].sort((a, b) => a - b);
+        if (!pages.length) throw new Error('Pick at least one page');
         setJobTitle('Extracting pages');
         blob = await api.pdfSplit(splitFile, pages, sessionId, { onJobUpdate: setCurrentJob });
-        filename = 'extracted.pdf';
+        filename = `${baseName(splitFile, 'document')} (pages ${pagesToRange(pages).replace(/ /g, '')}).pdf`;
       } else if (mode === 'images') {
-        if (!imageFiles.length) throw new Error('Add at least one image');
+        if (!imageItems.length) throw new Error('Add at least one image');
         setJobTitle('Creating PDF');
-        blob = await api.pdfImagesToPdf(imageFiles, sessionId, { onJobUpdate: setCurrentJob });
-        filename = 'images.pdf';
+        blob = await api.pdfImagesToPdf(imageItems.map((it) => it.file), sessionId, { onJobUpdate: setCurrentJob });
+        filename = `${baseName(imageItems[0].file, 'images')}.pdf`;
       }
       downloadBlob(blob, filename);
-      showToast('Done!');
+      showToast(`Saved ${filename} to your downloads`);
     } catch (err) { setError(err.message); }
     finally { setProcessing(false); setCurrentJob(null); }
   };
 
-  const fileAccept = mode === 'images' ? 'image/jpeg,image/png' : 'application/pdf';
-  const fileMulti = mode === 'merge' || mode === 'images';
-
   const modeTabStyle = (active) => ({
     padding: '10px 16px', borderRadius: '8px', cursor: 'pointer',
     border: `2px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-    background: active ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-card)',
-    color: active ? 'var(--accent)' : 'var(--text)',
+    background: active ? 'var(--accent-wash)' : 'var(--bg-card)',
+    color: active ? 'var(--accent-text)' : 'var(--text)',
     display: 'flex', alignItems: 'center', gap: '8px',
     fontSize: '13px', fontWeight: 500, transition: 'all 0.2s', whiteSpace: 'nowrap',
   });
@@ -467,10 +452,9 @@ export default function PDFEditor({ sessionId, isAdmin }) {
                 <div className="card-body">
                   <FileUploader
                     onFileSelect={handleEditSelect}
-                    maxSizeMB={100}
+                    maxSizeMB={isAdmin ? 150 : 50}
                     accept="application/pdf"
                     selectedFile={pdfFile}
-                    noLimit={isAdmin}
                   />
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)', opacity: 0.6, marginTop: '-6px' }}>
                     View pages, drag to reorder, rotate and remove, then download.
@@ -572,47 +556,50 @@ export default function PDFEditor({ sessionId, isAdmin }) {
           <div className="card" style={{ margin: 0 }}>
             <div className="card-header">
               <div className="card-title"><Layers size={18} /> Merge PDFs</div>
-            </div>
-            <div className="card-body">
-              <FileUploader
-                onFileSelect={handleMergeSelect}
-                maxSizeMB={100}
-                accept="application/pdf"
-                selectedFile={mergeFiles}
-                multiple={true}
-                noLimit={!!localStorage.getItem('adminToken')}
-              />
-              {mergeFiles.length > 0 && (
-                <div style={{ marginTop: '16px' }}>
-                  {mergeFiles.map((f, idx) => (
-                    <div key={idx} style={{
-                      display: 'flex', alignItems: 'center', gap: '10px',
-                      padding: '8px 12px', background: 'var(--bg)', borderRadius: '6px', marginBottom: '4px', fontSize: '13px',
-                    }}>
-                      <FileIcon size={16} style={{ flexShrink: 0, color: 'var(--text-secondary)' }} />
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-                      {mergeInfos[idx]?.pageCount && <span style={{ color: 'var(--accent-text)', fontSize: '12px', fontWeight: 500 }}>{mergeInfos[idx].pageCount} pg</span>}
-                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{formatBytes(f.size)}</span>
-                      <button style={thumbBtnStyle} onClick={() => moveMergeFile(idx, idx - 1)} disabled={idx === 0}><ChevronLeft size={14} /></button>
-                      <button style={thumbBtnStyle} onClick={() => moveMergeFile(idx, idx + 1)} disabled={idx === mergeFiles.length - 1}><ChevronRight size={14} /></button>
-                      <button style={{ ...thumbBtnStyle, color: 'var(--error, #e74c3c)' }} onClick={() => {
-                        setMergeFiles(p => p.filter((_, i) => i !== idx));
-                        setMergeInfos(p => p.filter((_, i) => i !== idx));
-                      }}><X size={14} /></button>
-                    </div>
-                  ))}
+              {mergeItems.length > 0 && (
+                <div className="card-header-note">
+                  {mergeItems.length} files · {mergeTotalPages} pages
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setMergeItems([]); setMergePages({}); }}>Clear</button>
                 </div>
               )}
-              {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
-              {mergeFiles.length >= 2 && (
-                <>
-                  <button className="btn btn-primary" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                    onClick={handleProcess} disabled={processing}>
-                    {processing ? <><Clock size={16} /> Merging...</> : <><Download size={16} /> Merge & Download</>}
-                  </button>
-                  <JobProgress job={currentJob} title={jobTitle || 'Merging PDF'} fallbackMessage="Worker is merging files" />
-                </>
+            </div>
+            <div className="card-body">
+              {mergeItems.length === 0 ? (
+                <FileUploader
+                  onFileSelect={(files) => files?.length && addMergeFiles(files)}
+                  maxSizeMB={isAdmin ? 150 : 50}
+                  accept="application/pdf"
+                  selectedFile={[]}
+                  multiple={true}
+                />
+              ) : (
+                <SortableGrid
+                  items={mergeItems}
+                  onReorder={(from, to) => setMergeItems((prev) => move(prev, from, to))}
+                  onFiles={addMergeFiles}
+                  renderItem={(item, index) => (
+                    <PdfFileCard
+                      item={item}
+                      index={index}
+                      onRemove={() => removeMergeItem(item.id)}
+                      onInfo={(id, pages) => setMergePages((prev) => ({ ...prev, [id]: pages || 0 }))}
+                    />
+                  )}
+                >
+                  <AddTile accept="application/pdf" label="Add PDFs" hint="or drop them here" onFiles={addMergeFiles} disabled={processing} />
+                </SortableGrid>
               )}
+              <div className="form-help">
+                {mergeItems.length < 2
+                  ? 'Add two or more PDFs. You can pick several at once, or add more later.'
+                  : 'Drag the cards to set the order. The first card comes first in the merged PDF.'}
+              </div>
+              {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
+              <button className="btn btn-primary" style={{ marginTop: '16px' }}
+                onClick={handleProcess} disabled={processing || mergeItems.length < 2}>
+                {processing ? <><Clock size={16} /> Merging...</> : <><Download size={16} /> Merge & Download</>}
+              </button>
+              <JobProgress job={currentJob} title={jobTitle || 'Merging PDF'} fallbackMessage="Worker is merging files" />
             </div>
           </div>
         )}
@@ -621,33 +608,51 @@ export default function PDFEditor({ sessionId, isAdmin }) {
         {mode === 'split' && (
           <div className="card" style={{ margin: 0 }}>
             <div className="card-header">
-              <div className="card-title"><Scissors size={18} /> Split / Extract Pages</div>
+              <div className="card-title"><Scissors size={18} /> Extract Pages</div>
+              {splitFile && (
+                <div className="card-header-note">
+                  <FileIcon size={14} /> {splitFile.name}{splitDoc ? ` · ${splitDoc.numPages} pages` : ''}
+                  <button className="btn btn-secondary btn-sm" onClick={clearSplit}><X size={13} /> Close</button>
+                </div>
+              )}
             </div>
             <div className="card-body">
               {!splitFile ? (
                 <FileUploader
                   onFileSelect={handleSplitSelect}
-                  maxSizeMB={100}
+                  maxSizeMB={isAdmin ? 150 : 50}
                   accept="application/pdf"
-                  selectedFile={splitFile}
-                  noLimit={!!localStorage.getItem('adminToken')}
+                  selectedFile={null}
                 />
               ) : (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                    <FileIcon size={16} />
-                    <span style={{ fontWeight: 500 }}>{splitFile.name}</span>
-                    <span style={{ fontSize: '12px', color: 'var(--accent-text)' }}>{splitPageCount} pages</span>
-                    <button style={thumbBtnStyle} onClick={() => { setSplitFile(null); setSplitPageCount(0); setSplitInput(''); }}><X size={14} /></button>
+                  <div className="picker-toolbar">
+                    <div className="form-group" style={{ margin: 0, flex: '1 1 260px' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={splitInput}
+                        onChange={(e) => handleSplitInput(e.target.value)}
+                        placeholder="Click pages below, or type e.g. 1, 3, 5-8"
+                        aria-label="Pages to extract"
+                      />
+                    </div>
+                    <button className="btn btn-secondary btn-sm" onClick={() => selectSplitPages('all')}>All</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => selectSplitPages('odd')}>Odd</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => selectSplitPages('even')}>Even</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => selectSplitPages('none')} disabled={!splitSelected.size}>None</button>
                   </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Pages to extract</label>
-                    <input type="text" className="form-input" value={splitInput} onChange={(e) => setSplitInput(e.target.value)} placeholder="e.g. 1, 3, 5-8" />
-                    <div className="form-help">Separate with commas. Use dash for ranges.</div>
+                  {splitDoc
+                    ? <PagePicker doc={splitDoc} selected={splitSelected} onChange={setSplitPages} />
+                    : !error && <div className="form-help">Reading pages…</div>}
+                  <div className="form-help">
+                    {splitSelected.size
+                      ? `${splitSelected.size} ${splitSelected.size === 1 ? 'page' : 'pages'} selected · they are saved as one new PDF`
+                      : 'Click the pages to keep. Shift+click selects a run of pages.'}
                   </div>
                   {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
-                  <button className="btn btn-primary" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                    onClick={handleProcess} disabled={processing || !splitInput.trim()}>
+                  <button className="btn btn-primary" style={{ marginTop: '16px' }}
+                    onClick={handleProcess} disabled={processing || !splitSelected.size}>
                     {processing ? <><Clock size={16} /> Extracting...</> : <><Download size={16} /> Extract & Download</>}
                   </button>
                   <JobProgress job={currentJob} title={jobTitle || 'Extracting pages'} fallbackMessage="Worker is creating the extracted PDF" />
@@ -662,41 +667,43 @@ export default function PDFEditor({ sessionId, isAdmin }) {
           <div className="card" style={{ margin: 0 }}>
             <div className="card-header">
               <div className="card-title"><Image size={18} /> Images → PDF</div>
-            </div>
-            <div className="card-body">
-              <FileUploader
-                onFileSelect={handleImagesSelect}
-                maxSizeMB={50}
-                accept="image/jpeg,image/png"
-                selectedFile={imageFiles}
-                multiple={true}
-                noLimit={!!localStorage.getItem('adminToken')}
-              />
-              {imageFiles.length > 0 && (
-                <div style={{ marginTop: '16px' }}>
-                  {imageFiles.map((f, idx) => (
-                    <div key={idx} style={{
-                      display: 'flex', alignItems: 'center', gap: '10px',
-                      padding: '8px 12px', background: 'var(--bg)', borderRadius: '6px', marginBottom: '4px', fontSize: '13px',
-                    }}>
-                      <Image size={16} style={{ flexShrink: 0, color: 'var(--text-secondary)' }} />
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{formatBytes(f.size)}</span>
-                      <button style={{ ...thumbBtnStyle, color: 'var(--error, #e74c3c)' }} onClick={() => setImageFiles(p => p.filter((_, i) => i !== idx))}><X size={14} /></button>
-                    </div>
-                  ))}
+              {imageItems.length > 0 && (
+                <div className="card-header-note">
+                  {imageItems.length} {imageItems.length === 1 ? 'page' : 'pages'}
+                  <button className="btn btn-secondary btn-sm" onClick={() => setImageItems([])}>Clear</button>
                 </div>
               )}
-              {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
-              {imageFiles.length > 0 && (
-                <>
-                  <button className="btn btn-primary" style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                    onClick={handleProcess} disabled={processing}>
-                    {processing ? <><Clock size={16} /> Creating...</> : <><Download size={16} /> Create PDF</>}
-                  </button>
-                  <JobProgress job={currentJob} title={jobTitle || 'Creating PDF'} fallbackMessage="Worker is building the PDF" />
-                </>
+            </div>
+            <div className="card-body">
+              {imageItems.length === 0 ? (
+                <FileUploader
+                  onFileSelect={(files) => files?.length && addImages(files)}
+                  maxSizeMB={50}
+                  accept="image/jpeg,image/png"
+                  selectedFile={[]}
+                  multiple={true}
+                />
+              ) : (
+                <SortableGrid
+                  items={imageItems}
+                  onReorder={(from, to) => setImageItems((prev) => move(prev, from, to))}
+                  onFiles={addImages}
+                  renderItem={(item, index) => (
+                    <ImageFileCard item={item} index={index} onRemove={() => setImageItems((prev) => prev.filter((it) => it.id !== item.id))} />
+                  )}
+                >
+                  <AddTile accept="image/jpeg,image/png" label="Add images" hint="JPG or PNG" onFiles={addImages} disabled={processing} />
+                </SortableGrid>
               )}
+              <div className="form-help">
+                Each image becomes one page of a new PDF, in this order. Drag to reorder.
+              </div>
+              {error && <div style={{ color: 'var(--error)', marginTop: '12px', padding: '10px', background: 'rgba(231, 170, 164, 0.12)', borderRadius: '6px', fontSize: '13px' }}>{error}</div>}
+              <button className="btn btn-primary" style={{ marginTop: '16px' }}
+                onClick={handleProcess} disabled={processing || !imageItems.length}>
+                {processing ? <><Clock size={16} /> Creating...</> : <><Download size={16} /> Create PDF</>}
+              </button>
+              <JobProgress job={currentJob} title={jobTitle || 'Creating PDF'} fallbackMessage="Worker is building the PDF" />
             </div>
           </div>
         )}
@@ -707,12 +714,7 @@ export default function PDFEditor({ sessionId, isAdmin }) {
       )}
 
       {toast && (
-        <div style={{
-          position: 'fixed', bottom: '20px', right: '20px', zIndex: 9999,
-          padding: '12px 20px', borderRadius: '8px', fontWeight: 500, fontSize: '14px',
-          background: toast.type === 'error' ? 'var(--error)' : 'var(--accent)',
-          color: '#fff', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-        }}>
+        <div className={`toast toast-${toast.type === 'error' ? 'error' : 'success'}`}>
           {toast.message}
         </div>
       )}

@@ -176,7 +176,12 @@ app.get('/s/:slug', redirectHandler);
 app.get('/c/:token', (req, res) => {
   const { statements } = require('../db/database');
   const clip = statements.getClipInfo.get(req.params.token);
-  if (!clip || clip.deleted) return res.redirect('/');
+  if (!clip || clip.deleted) {
+    // Let the app explain that the clip is gone instead of landing on the dashboard.
+    const indexPath = path.join(__dirname, '..', '..', 'web', 'dist', 'index.html');
+    if (require('fs').existsSync(indexPath)) return res.status(404).sendFile(indexPath);
+    return res.status(404).json({ error: 'Clip not found' });
+  }
 
   const protocol = req.protocol;
   const host = req.get('host');

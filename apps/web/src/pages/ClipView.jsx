@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Download, Film, AlertCircle, CheckCircle, XCircle, Copy, Code, Trash2, ArrowLeft } from 'lucide-react';
+import { Download, Film, AlertCircle, CheckCircle, XCircle, Copy, Code, ArrowLeft } from 'lucide-react';
+import ConfirmDelete from '../components/ConfirmDelete';
 import { api, formatBytes, formatDate, getClipStreamUrl, getClipEmbedUrl } from '../api';
 import useToast from '../hooks/useToast';
 
@@ -197,19 +198,7 @@ function ClipView({ isAdmin }) {
             <Download size={14} /> Download
           </button>
           {canDelete && (
-            <button
-              onClick={handleDelete}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px',
-                background: 'rgba(231, 170, 164, 0.18)', border: '1px solid rgba(231, 170, 164, 0.36)',
-                color: 'var(--error)', padding: '8px 14px', borderRadius: '6px',
-                cursor: 'pointer', transition: 'background 0.15s',
-              }}
-              onMouseOver={(e) => e.currentTarget.style.background = 'rgba(231, 170, 164, 0.3)'}
-              onMouseOut={(e) => e.currentTarget.style.background = 'rgba(231, 170, 164, 0.18)'}
-            >
-              <Trash2 size={14} /> Delete
-            </button>
+            <ConfirmDelete onConfirm={handleDelete} label="Delete" title="Delete clip" className="btn btn-danger" />
           )}
         </div>
 

@@ -4,6 +4,7 @@ import { Link as LinkIcon, Sparkles, CheckCircle, Copy, Clock, List, XCircle } f
 import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import useToast from '../hooks/useToast';
+import ConfirmDelete from '../components/ConfirmDelete';
 
 function Shortener({ sessionId }) {
   const [url, setUrl] = useState('');
@@ -16,6 +17,16 @@ function Shortener({ sessionId }) {
 
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
+
+  const handleDelete = async (link) => {
+    try {
+      await api.deleteShortlink(link.slug, sessionId);
+      showToast('Link deleted');
+      fetchLinks();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
 
   const fetchLinks = async () => {
     try {
@@ -203,12 +214,15 @@ function Shortener({ sessionId }) {
                         {formatDate(link.createdAt)}
                       </td>
                       <td>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => copyToClipboard(`${getBaseUrl()}/s/${link.slug}`)}
-                        >
-                          <Copy size={14} /> Copy
-                        </button>
+                        <div style={{ display: 'flex', gap: '5px' }}>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => copyToClipboard(`${getBaseUrl()}/s/${link.slug}`)}
+                          >
+                            <Copy size={14} /> Copy
+                          </button>
+                          <ConfirmDelete onConfirm={() => handleDelete(link)} title="Delete link" />
+                        </div>
                       </td>
                     </tr>
                   ))}

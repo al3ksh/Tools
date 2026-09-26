@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { api, formatDate, formatBytes, getFileUrl, getDropUrl, getClipUrl } from '../api';
 import {
     Shield, Download, FileAudio, Link as LinkIcon, FolderOpen,
-    Trash2, RefreshCw, Copy, ExternalLink, CheckCircle, XCircle,
+    RefreshCw, Copy, ExternalLink, CheckCircle, XCircle,
     Clock, AlertTriangle, Archive, Film
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
+import ConfirmDelete from '../components/ConfirmDelete';
 
 const STATUS_ICONS = {
     queued: <Clock size={14} />,
@@ -134,44 +135,17 @@ function AdminPanel() {
 
             <div className="content">
                 {/* Tab Bar */}
-                <div style={{
-                    display: 'flex',
-                    gap: '4px',
-                    background: 'var(--bg-secondary)',
-                    borderRadius: '8px',
-                    padding: '4px',
-                    marginBottom: '20px'
-                }}>
+                <div className="segmented" role="tablist" style={{ marginBottom: '20px' }}>
                     {tabs.map(tab => (
                         <button
                             key={tab.id}
+                            role="tab"
+                            aria-selected={activeTab === tab.id}
+                            className={`segmented-item${activeTab === tab.id ? ' active' : ''}`}
                             onClick={() => setActiveTab(tab.id)}
-                            style={{
-                                flex: 1,
-                                padding: '10px 16px',
-                                border: 'none',
-                                borderRadius: '6px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '8px',
-                                fontSize: '13px',
-                                fontWeight: '500',
-                                transition: 'all 0.2s',
-                                background: activeTab === tab.id ? 'var(--accent)' : 'transparent',
-                                color: activeTab === tab.id ? '#fff' : 'var(--text-secondary)',
-                            }}
                         >
                             {tab.icon} {tab.label}
-                            <span style={{
-                                background: activeTab === tab.id ? 'rgba(255,255,255,0.2)' : 'var(--bg-tertiary)',
-                                padding: '2px 8px',
-                                borderRadius: '10px',
-                                fontSize: '11px',
-                            }}>
-                                {tab.count}
-                            </span>
+                            <span className="segmented-count">{tab.count}</span>
                         </button>
                     ))}
                 </div>
@@ -265,14 +239,7 @@ function AdminPanel() {
                                                             </a>
                                                         )}
                                                         {job.status !== 'deleted' && (
-                                                            <button
-                                                                className="btn btn-secondary btn-sm"
-                                                                onClick={() => handleDeleteJob(job.id)}
-                                                                title="Delete"
-                                                                style={{ color: 'var(--error)' }}
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </button>
+                                                            <ConfirmDelete onConfirm={() => handleDeleteJob(job.id)} title="Delete" />
                                                         )}
                                                     </div>
                                                 </td>
@@ -364,14 +331,7 @@ function AdminPanel() {
                                                             >
                                                                 <Copy size={14} />
                                                             </button>
-                                                            <button
-                                                                className="btn btn-secondary btn-sm"
-                                                                onClick={() => handleDeleteDrop(drop.token)}
-                                                                title="Delete"
-                                                                style={{ color: 'var(--error)' }}
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </button>
+                                                            <ConfirmDelete onConfirm={() => handleDeleteDrop(drop.token)} title="Delete" />
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -461,14 +421,7 @@ function AdminPanel() {
                                                         >
                                                             <Copy size={14} />
                                                         </button>
-                                                        <button
-                                                            className="btn btn-secondary btn-sm"
-                                                            onClick={() => handleDeleteLink(link.slug)}
-                                                            title="Delete"
-                                                            style={{ color: 'var(--error)' }}
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </button>
+                                                        <ConfirmDelete onConfirm={() => handleDeleteLink(link.slug)} title="Delete" />
                                                     </div>
                                                 </td>
                                             </tr>
@@ -555,14 +508,7 @@ function AdminPanel() {
                                                             >
                                                                 <Copy size={14} />
                                                             </button>
-                                                            <button
-                                                                className="btn btn-secondary btn-sm"
-                                                                onClick={() => handleDeleteClip(clip.token)}
-                                                                title="Delete"
-                                                                style={{ color: 'var(--error)' }}
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </button>
+                                                            <ConfirmDelete onConfirm={() => handleDeleteClip(clip.token)} title="Delete" />
                                                         </div>
                                                     </td>
                                                 </tr>

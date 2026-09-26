@@ -217,14 +217,18 @@ router.get('/list', (req, res) => {
   }
 });
 
-// DELETE /api/drop/:token - admin-only delete
+// DELETE /api/drop/:token - the uploader's session or an admin
 router.delete('/:token', (req, res) => {
   try {
-    if (!req.isAdmin) {
-      return res.status(403).json({ error: 'Admin only' });
-    }
     const { token } = req.params;
     const drop = statements.getDrop.get(token);
+    if (!drop || drop.deleted) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    const sessionId = (req.body && req.body.sessionId) || req.query.sessionId;
+    if (!req.isAdmin && (!drop.sessionId || drop.sessionId !== sessionId)) {
+      return res.status(403).json({ error: 'Not your file' });
+    }
     if (drop && drop.path) {
       const fullPath = safePath(DATA_DIR, drop.path);
       if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
