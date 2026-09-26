@@ -5,6 +5,7 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { statements, DATA_DIR } = require('../db/database');
 const { clampNumber, checkJobLimit, createDiskSpaceGuard } = require('./utils');
+const { attachStaged } = require('./staged');
 
 const router = express.Router();
 const compressTempDir = path.join(DATA_DIR, 'uploads', 'compress-temp');
@@ -61,7 +62,7 @@ router.post('/', diskSpaceGuard, (req, res, next) => {
     }
     next();
   });
-}, (req, res) => {
+}, attachStaged({ maxBytes: (req) => (req.isAdmin ? 5 * 1024 * 1024 * 1024 : 500 * 1024 * 1024) }), (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 

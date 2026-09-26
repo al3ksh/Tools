@@ -304,7 +304,7 @@ export default function PDFEditor({ sessionId, isAdmin }) {
     const infos = [];
     for (const f of arr) {
       try {
-        const info = await api.pdfInfo(f);
+        const info = await api.pdfInfo(f, sessionId);
         infos.push({ name: f.name, size: f.size, pageCount: info.pageCount });
       } catch { infos.push({ name: f.name, size: f.size, pageCount: null }); }
     }
@@ -351,7 +351,7 @@ export default function PDFEditor({ sessionId, isAdmin }) {
     }
     setSplitFile(selected);
     try {
-      const info = await api.pdfInfo(selected);
+      const info = await api.pdfInfo(selected, sessionId);
       setSplitPageCount(info.pageCount);
     } catch {
       setSplitPageCount(0);
@@ -374,7 +374,7 @@ export default function PDFEditor({ sessionId, isAdmin }) {
     if (!files?.length) return;
     if (mode === 'edit') loadPdf(files[0]);
     else if (mode === 'merge') addMergeFiles(files);
-    else if (mode === 'split') { setSplitFile(files[0]); api.pdfInfo(files[0]).then(i => setSplitPageCount(i.pageCount)).catch(() => {}); }
+    else if (mode === 'split') { setSplitFile(files[0]); api.pdfInfo(files[0], sessionId).then(i => setSplitPageCount(i.pageCount)).catch(() => {}); }
     else if (mode === 'images') setImageFiles(prev => [...prev, ...Array.from(files)]);
   };
 
@@ -383,7 +383,7 @@ export default function PDFEditor({ sessionId, isAdmin }) {
     if (!files?.length) return;
     if (mode === 'edit') loadPdf(files[0]);
     else if (mode === 'merge') addMergeFiles(files);
-    else if (mode === 'split') { setSplitFile(files[0]); api.pdfInfo(files[0]).then(i => setSplitPageCount(i.pageCount)).catch(() => {}); }
+    else if (mode === 'split') { setSplitFile(files[0]); api.pdfInfo(files[0], sessionId).then(i => setSplitPageCount(i.pageCount)).catch(() => {}); }
     else if (mode === 'images') setImageFiles(prev => [...prev, ...Array.from(files)]);
     e.target.value = '';
   };

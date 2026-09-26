@@ -9,6 +9,9 @@ const { v4: uuidv4 } = require('uuid');
 const { statements, DATA_DIR } = require('../db/database');
 const { heavyWorkLimit } = require('../lib/heavyWork');
 const { clampNumber, createDiskSpaceGuard } = require('./utils');
+const { attachStaged } = require('./staged');
+
+const stagedGif = attachStaged({ maxBytes: (req) => (req.isAdmin ? 500 * 1024 * 1024 : 100 * 1024 * 1024) });
 
 const gifRateLimit = rateLimit({
   windowMs: 60 * 1000,
@@ -127,7 +130,7 @@ router.post('/info', gifRateLimit, heavyWorkLimit, diskSpaceGuard, (req, res, ne
     }
     next();
   });
-}, async (req, res) => {
+}, stagedGif, async (req, res) => {
   const tempFiles = [];
 
   try {
@@ -171,7 +174,7 @@ router.post('/process', gifRateLimit, diskSpaceGuard, (req, res, next) => {
     }
     next();
   });
-}, (req, res) => {
+}, stagedGif, (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 

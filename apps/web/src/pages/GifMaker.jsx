@@ -89,7 +89,7 @@ export default function GifMaker({ sessionId, isAdmin }) {
 
     setLoadingMeta(true);
     try {
-      const info = await api.gifInfo(nextFile);
+      const info = await api.gifInfo(nextFile, sessionId);
       setMeta(info);
       if (nextFile.type.startsWith('image/') && !nextFile.name.toLowerCase().endsWith('.gif')) {
         setWidth(Math.min(info.width || 480, 1080));
@@ -262,10 +262,9 @@ export default function GifMaker({ sessionId, isAdmin }) {
           <div className="card-body">
             <FileUploader
               onFileSelect={handleFileChange}
-              maxSizeMB={200}
+              maxSizeMB={isAdmin ? 500 : 100}
               accept="video/*,image/*"
               selectedFile={file}
-              noLimit={isAdmin}
             />
             <div className="form-help" style={{ marginTop: '-6px' }}>
               Supported: MP4, WEBM, MOV, MKV, GIF and images (PNG, JPG, WEBP)

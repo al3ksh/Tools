@@ -282,6 +282,9 @@ async function cleanupExpiredJobs() {
     }
 
     const ORPHAN_THRESHOLD = 5 * 60 * 1000;
+    // Uploads wait for the user to pick settings (Converter) or for a job
+    // queued behind others, so give them as long as a guest session lasts.
+    const UPLOAD_ORPHAN_THRESHOLD = 60 * 60 * 1000;
 
     const knownDropPaths = new Set(
       db.prepare(`SELECT path FROM drops WHERE deleted = 0`).all().map(r => r.path)
@@ -312,7 +315,8 @@ async function cleanupExpiredJobs() {
         if (sourcePath && sourcePath.startsWith('uploads/')) {
           referencedUploadPaths.add(path.normalize(sourcePath));
         }
-        for (const file of input && input.files ? input.files : []) {
+        const inputFiles = [...(input && input.files ? input.files : []), ...(input && input.file ? [input.file] : [])];
+        for (const file of inputFiles) {
           if (file.path && file.path.startsWith('uploads/')) {
             referencedUploadPaths.add(path.normalize(file.path));
           }
@@ -339,7 +343,7 @@ async function cleanupExpiredJobs() {
           const entryPath = path.join(dateDirPath, entry);
           try {
             const stat = fs.statSync(entryPath);
-            if (stat.isFile() && stat.mtimeMs < Date.now() - ORPHAN_THRESHOLD) {
+            if (stat.isFile() && stat.mtimeMs < Date.now() - UPLOAD_ORPHAN_THRESHOLD) {
               const relativePath = path.normalize(path.relative(DATA_DIR, entryPath));
               const referenced = referencedUploadPaths.has(relativePath);
               if (!referenced) {
@@ -356,6 +360,7 @@ async function cleanupExpiredJobs() {
       path.join(DATA_DIR, 'uploads', 'gif-temp'),
       path.join(DATA_DIR, 'uploads', 'pdf-temp'),
       path.join(DATA_DIR, 'uploads', 'compress-temp'),
+      path.join(DATA_DIR, 'uploads', 'staged-temp'),
       path.join(DATA_DIR, 'drops-temp'),
       path.join(DATA_DIR, 'clips-temp')
     ];

@@ -161,7 +161,7 @@ function Converter({ sessionId, isAdmin }) {
               <label className="form-label">Choose File</label>
               <FileUploader
                 onFileSelect={handleFileSelect}
-                maxSizeMB={100}
+                maxSizeMB={500}
                 accept="video/*,audio/*,.flac,.m4a,.webm"
                 selectedFile={selectedFile}
                 noLimit={isAdmin}

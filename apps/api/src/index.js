@@ -88,9 +88,14 @@ app.use((req, res, next) => {
   res.on('close', releaseRequest);
   next();
 });
+// Upload chunks are paced by the browser and guarded per upload, so they do not
+// spend the general budget: a large upload would otherwise lock out its own
+// progress polling.
+const CHUNK_PATHS = new Set(['/drop/upload-chunk', '/clip/upload-chunk', '/upload/chunk']);
 app.use('/api', rateLimit({
   windowMs: 60 * 1000,
   max: 180,
+  skip: (req) => req.method === 'POST' && CHUNK_PATHS.has(req.path),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please try again in a minute.' },
@@ -142,6 +147,7 @@ const pdfRoutes = require('../routes/pdf');
 const gifRoutes = require('../routes/gif');
 const clipRoutes = require('../routes/clip');
 const compressRoutes = require('../routes/compress');
+const { router: stagedRoutes } = require('../routes/staged');
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -150,6 +156,7 @@ app.use('/api/downloader', downloaderRoutes);
 app.use('/api/converter', converterRoutes);
 // Upload route (from converter)
 app.use('/api/upload', converterRoutes);
+app.use('/api/upload', stagedRoutes);
 app.use('/api/shorten', shortenerRoutes);
 app.use('/api/shortlinks', shortenerRoutes);
 app.use('/api/drop', dropRoutes);

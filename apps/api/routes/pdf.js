@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { PDFDocument } = require('pdf-lib');
 const { v4: uuidv4 } = require('uuid');
+const { attachStaged } = require('./staged');
 const { statements, DATA_DIR } = require('../db/database');
 const { heavyWorkLimit } = require('../lib/heavyWork');
 const { createDiskSpaceGuard } = require('./utils');
@@ -67,7 +68,16 @@ const pdfSizeLimit = (req, res, next) => {
   next();
 };
 
+// Files sent with the request, or staged uploads named by it (see staged.js).
 function getUploader(method, field, maxCount) {
+  const useStaged = attachStaged({
+    multiple: !!maxCount,
+    maxBytes: (req) => (req.isAdmin ? PDF_ADMIN_LIMIT * (maxCount || 1) : PDF_GUEST_LIMIT),
+    accepts: (file) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      return field === 'images' ? ['.jpg', '.jpeg', '.png'].includes(ext) : ext === '.pdf';
+    },
+  });
   return (req, res, next) => {
     const uploader = req.isAdmin ? upload : uploadGuest;
     const handler = maxCount ? uploader.array(field, maxCount) : uploader.single(field);
@@ -82,7 +92,7 @@ function getUploader(method, field, maxCount) {
         console.error('PDF upload failed:', err.message);
         return res.status(400).json({ error: err.message || 'Upload failed' });
       }
-      next();
+      useStaged(req, res, next);
     });
   };
 }

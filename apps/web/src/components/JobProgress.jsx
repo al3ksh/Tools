@@ -1,7 +1,8 @@
-import { CheckCircle, Clock, Loader, XCircle } from 'lucide-react';
+import { CheckCircle, Clock, Loader, Upload, XCircle } from 'lucide-react';
 
 function getStatusLabel(job) {
   const status = job?.status;
+  if (status === 'uploading') return 'Uploading';
   if (status === 'queued') return job.queuePosition ? `Queued #${job.queuePosition}` : 'Queued';
   if (status === 'running') return 'Running';
   if (status === 'done') return 'Done';
@@ -12,6 +13,7 @@ function getStatusLabel(job) {
 function getProgress(job) {
   if (!job) return 0;
   if (job.status === 'done') return 100;
+  if (job.status === 'uploading') return Math.max(job.progress || 0, 1);
   if (job.status === 'queued') return Math.max(job.progress || 0, 4);
   return Math.min(Math.max(job.progress || 0, 8), 99);
 }
@@ -37,6 +39,7 @@ function getMessage(job, fallbackMessage) {
   if (!job) return fallbackMessage || 'Preparing job';
   if (job.status === 'failed') return job.error || fallbackMessage || 'Job failed';
   if (job.status === 'done') return 'Completed';
+  if (job.status === 'uploading') return 'Sending the file in parts';
   if (job.status === 'queued') {
     return job.queuePosition ? `Queued as #${job.queuePosition}. Waiting for worker slot.` : 'Queued. Waiting for worker slot.';
   }
@@ -51,7 +54,7 @@ function JobProgress({ job, title, fallbackMessage, compact = false }) {
   const status = job.status || 'queued';
   const progress = getProgress(job);
   const message = getMessage(job, fallbackMessage);
-  const Icon = status === 'done' ? CheckCircle : status === 'failed' ? XCircle : status === 'queued' ? Clock : Loader;
+  const Icon = status === 'done' ? CheckCircle : status === 'failed' ? XCircle : status === 'queued' ? Clock : status === 'uploading' ? Upload : Loader;
   const statusLabel = getStatusLabel(job);
 
   return (

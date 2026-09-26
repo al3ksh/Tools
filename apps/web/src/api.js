@@ -1,5 +1,22 @@
 const API_BASE = '/api';
 
+// Cloudflare turns away request bodies over 100 MB before they reach the
+// server, so larger uploads go ahead in chunks (see stageFiles).
+const SINGLE_REQUEST_BUDGET = 90 * 1024 * 1024;
+
+// The server's own message, or a plain explanation for the HTML error pages
+// Cloudflare returns (too large, rate limited, origin too slow).
+async function readError(response, fallback) {
+  const data = await response.json().catch(() => null);
+  if (data && data.error) return data.error;
+  if (response.status === 413) return 'This file is too large to upload in one request.';
+  if (response.status === 429) return 'Too many requests. Wait a moment and try again.';
+  if ([502, 503, 504, 520, 521, 522, 523, 524].includes(response.status)) {
+    return 'The server did not respond in time. Try again in a moment.';
+  }
+  return fallback;
+}
+
 async function fetchApi(endpoint, options = {}) {
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
@@ -11,8 +28,7 @@ async function fetchApi(endpoint, options = {}) {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || 'Request failed');
+    throw new Error(await readError(response, 'Request failed'));
   }
 
   return response.json();
@@ -26,8 +42,7 @@ async function submitPdfJob(endpoint, formData, sessionId, fallbackError, option
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: fallbackError }));
-    throw new Error(error.error || fallbackError);
+    throw new Error(await readError(response, fallbackError));
   }
 
   const { jobId } = await response.json();
@@ -45,8 +60,7 @@ async function submitPdfJob(endpoint, formData, sessionId, fallbackError, option
     if (job.status === 'done') {
       const fileResponse = await fetch(getFileUrl(jobId, null, sessionId), { credentials: 'include' });
       if (!fileResponse.ok) {
-        const error = await fileResponse.json().catch(() => ({ error: 'Download failed' }));
-        throw new Error(error.error || 'Download failed');
+        throw new Error(await readError(fileResponse, 'Download failed'));
       }
       return fileResponse.blob();
     }
@@ -67,8 +81,7 @@ async function submitGeneratedFileJob(endpoint, formData, sessionId, fallbackErr
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: fallbackError }));
-    throw new Error(error.error || fallbackError);
+    throw new Error(await readError(response, fallbackError));
   }
 
   const { jobId } = await response.json();
@@ -86,8 +99,7 @@ async function submitGeneratedFileJob(endpoint, formData, sessionId, fallbackErr
     if (job.status === 'done') {
       const fileResponse = await fetch(getFileUrl(jobId, null, sessionId), { credentials: 'include' });
       if (!fileResponse.ok) {
-        const error = await fileResponse.json().catch(() => ({ error: 'Download failed' }));
-        throw new Error(error.error || 'Download failed');
+        throw new Error(await readError(fileResponse, 'Download failed'));
       }
       return fileResponse.blob();
     }
@@ -133,7 +145,10 @@ export const api = {
   }),
 
   // Converter
-  uploadFile: async (file, sessionId) => {
+  uploadFile: async (file, sessionId, onProgress) => {
+    if (file.size > SINGLE_REQUEST_BUDGET) {
+      return stageFile(file, sessionId, onProgress && (({ uploadedBytes }) => onProgress(Math.round((uploadedBytes / file.size) * 100))));
+    }
     const formData = new FormData();
     formData.append('file', file);
     if (sessionId) formData.append('sessionId', sessionId);
@@ -143,8 +158,7 @@ export const api = {
       body: formData,
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-      throw new Error(error.error || 'Upload failed');
+      throw new Error(await readError(response, 'Upload failed'));
     }
     return response.json();
   },
@@ -187,8 +201,7 @@ export const api = {
       throw new Error(err.error || 'Access denied');
     }
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Download failed' }));
-      throw new Error(error.error || 'Download failed');
+      throw new Error(await readError(response, 'Download failed'));
     }
     const blob = await response.blob();
     const contentDisposition = response.headers.get('Content-Disposition');
@@ -219,24 +232,24 @@ export const api = {
   }),
 
   // GIF
-  gifInfo: async (file) => {
+  gifInfo: async (file, sessionId) => {
     const formData = new FormData();
-    formData.append('file', file);
+    if (sessionId) formData.append('sessionId', sessionId);
+    await appendFiles(formData, 'file', [file], sessionId);
     const response = await fetch(`${API_BASE}/gif/info`, {
       method: 'POST',
       credentials: 'include',
       body: formData,
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to read media info' }));
-      throw new Error(error.error || 'Failed to read media info');
+      throw new Error(await readError(response, 'Failed to read media info'));
     }
     return response.json();
   },
   gifProcess: async (file, options = {}, sessionId, callbacks = {}) => {
     const formData = new FormData();
-    formData.append('file', file);
     if (sessionId) formData.append('sessionId', sessionId);
+    await appendFiles(formData, 'file', [file], sessionId, callbacks);
     Object.entries(options).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') {
         formData.append(key, String(value));
@@ -248,8 +261,8 @@ export const api = {
 
   compressFile: async (file, options = {}, sessionId, callbacks = {}) => {
     const formData = new FormData();
-    formData.append('file', file);
     formData.append('sessionId', sessionId);
+    await appendFiles(formData, 'file', [file], sessionId, callbacks);
     Object.entries(options).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') formData.append(key, String(value));
     });
@@ -257,58 +270,58 @@ export const api = {
   },
 
   // PDF
-  pdfInfo: async (file) => {
+  pdfInfo: async (file, sessionId) => {
     const formData = new FormData();
-    formData.append('file', file);
+    if (sessionId) formData.append('sessionId', sessionId);
+    await appendFiles(formData, 'file', [file], sessionId);
     const response = await fetch(`${API_BASE}/pdf/info`, {
       method: 'POST',
       credentials: 'include',
       body: formData,
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed' }));
-      throw new Error(error.error || 'Failed');
+      throw new Error(await readError(response, 'Failed'));
     }
     return response.json();
   },
   pdfMerge: async (files, sessionId, callbacks = {}) => {
     const formData = new FormData();
-    files.forEach(f => formData.append('files', f));
     if (sessionId) formData.append('sessionId', sessionId);
+    await appendFiles(formData, 'files', files, sessionId, callbacks);
     return submitPdfJob('/pdf/merge', formData, sessionId, 'Merge failed', callbacks);
   },
   pdfSplit: async (file, pages, sessionId, callbacks = {}) => {
     const formData = new FormData();
-    formData.append('file', file);
-    formData.append('pages', JSON.stringify(pages));
     if (sessionId) formData.append('sessionId', sessionId);
+    await appendFiles(formData, 'file', [file], sessionId, callbacks);
+    formData.append('pages', JSON.stringify(pages));
     return submitPdfJob('/pdf/split', formData, sessionId, 'Split failed', callbacks);
   },
   pdfRotate: async (file, rotations, sessionId, callbacks = {}) => {
     const formData = new FormData();
-    formData.append('file', file);
-    formData.append('rotations', JSON.stringify(rotations));
     if (sessionId) formData.append('sessionId', sessionId);
+    await appendFiles(formData, 'file', [file], sessionId, callbacks);
+    formData.append('rotations', JSON.stringify(rotations));
     return submitPdfJob('/pdf/rotate', formData, sessionId, 'Rotate failed', callbacks);
   },
   pdfRemovePages: async (file, pages, sessionId, callbacks = {}) => {
     const formData = new FormData();
-    formData.append('file', file);
-    formData.append('pages', JSON.stringify(pages));
     if (sessionId) formData.append('sessionId', sessionId);
+    await appendFiles(formData, 'file', [file], sessionId, callbacks);
+    formData.append('pages', JSON.stringify(pages));
     return submitPdfJob('/pdf/remove-pages', formData, sessionId, 'Remove pages failed', callbacks);
   },
   pdfImagesToPdf: async (files, sessionId, callbacks = {}) => {
     const formData = new FormData();
-    files.forEach(f => formData.append('images', f));
     if (sessionId) formData.append('sessionId', sessionId);
+    await appendFiles(formData, 'images', files, sessionId, callbacks);
     return submitPdfJob('/pdf/images-to-pdf', formData, sessionId, 'Conversion failed', callbacks);
   },
   pdfReorder: async (file, order, sessionId, callbacks = {}) => {
     const formData = new FormData();
-    formData.append('file', file);
-    formData.append('order', JSON.stringify(order));
     if (sessionId) formData.append('sessionId', sessionId);
+    await appendFiles(formData, 'file', [file], sessionId, callbacks);
+    formData.append('order', JSON.stringify(order));
     return submitPdfJob('/pdf/reorder', formData, sessionId, 'Reorder failed', callbacks);
   },
 
@@ -364,7 +377,7 @@ export const getClipStreamUrl = (token) => `/api/clip/${token}/stream`;
 
 export const getClipEmbedUrl = (token) => `/c/${token}/embed`;
 
-const CLIP_CHUNK_SIZE = 5 * 1024 * 1024;
+const CLIP_CHUNK_SIZE = 16 * 1024 * 1024;
 const DROP_CHUNK_SIZE = 16 * 1024 * 1024;
 const MAX_CHUNK_RETRIES = 3;
 
@@ -403,13 +416,12 @@ export async function uploadChunks(file, onProgress) {
 
       if (response.ok) break;
 
-      const error = await response.json().catch(() => ({ error: 'Upload failed' }));
       const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
       if (!retryable || attempt === MAX_CHUNK_RETRIES) {
-        throw new Error(error.error || 'Upload failed');
+        throw new Error(await readError(response, 'Upload failed'));
       }
 
-      await delay(500 * 2 ** attempt);
+      await delay(retryAfterMs((name) => response.headers.get(name)) ?? 500 * 2 ** attempt);
     }
 
     uploadedChunks++;
@@ -434,11 +446,17 @@ function parseUploadError(xhr, fallback) {
   }
 }
 
-function sendDropChunk(uploadId, sessionId, file, start, end, onProgress) {
+// How long the server (or Cloudflare) asked us to wait before retrying.
+function retryAfterMs(getHeader) {
+  const value = Number(getHeader('Retry-After') || getHeader('RateLimit-Reset'));
+  return Number.isFinite(value) && value > 0 ? Math.min(value, 60) * 1000 : null;
+}
+
+function sendChunk(endpoint, uploadId, sessionId, file, start, end, onProgress) {
   return new Promise((resolve, reject) => {
     const blob = file.slice(start, end + 1);
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${API_BASE}/drop/upload-chunk`);
+    xhr.open('POST', `${API_BASE}${endpoint}`);
     xhr.withCredentials = true;
     xhr.timeout = 4 * 60 * 1000;
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
@@ -463,6 +481,7 @@ function sendDropChunk(uploadId, sessionId, file, start, end, onProgress) {
       }
       const error = new Error(parseUploadError(xhr, 'Upload chunk failed'));
       error.status = xhr.status;
+      error.retryAfterMs = retryAfterMs((name) => xhr.getResponseHeader(name));
       reject(error);
     };
     xhr.onerror = () => {
@@ -497,7 +516,8 @@ async function finalizeDropUpload(uploadId, file, sessionId, password) {
   return response.json();
 }
 
-async function uploadDropChunks(file, sessionId, password, onProgress, onPhase) {
+// Sends a file as ordered chunks to one upload id; returns the id.
+async function uploadInChunks(endpoint, file, sessionId, onProgress, onPhase) {
   if (!sessionId) throw new Error('Missing browser session. Refresh the page and try again.');
   if (!file || file.size <= 0) throw new Error('The selected file is empty.');
 
@@ -509,14 +529,14 @@ async function uploadDropChunks(file, sessionId, password, onProgress, onPhase) 
 
     for (let attempt = 0; attempt <= MAX_CHUNK_RETRIES; attempt++) {
       try {
-        await sendDropChunk(uploadId, sessionId, file, start, end, onProgress);
+        await sendChunk(endpoint, uploadId, sessionId, file, start, end, onProgress);
         break;
       } catch (error) {
         const retryable = error.status === 0 || error.status === 408 || error.status === 409
           || error.status === 429 || error.status >= 500;
         if (!retryable || attempt === MAX_CHUNK_RETRIES) throw error;
         if (onPhase) onPhase('retrying');
-        await delay(750 * 2 ** attempt);
+        await delay(error.retryAfterMs ?? 750 * 2 ** attempt);
         if (onPhase) onPhase('uploading');
       }
     }
@@ -531,6 +551,11 @@ async function uploadDropChunks(file, sessionId, password, onProgress, onPhase) 
     }
   }
 
+  return uploadId;
+}
+
+async function uploadDropChunks(file, sessionId, password, onProgress, onPhase) {
+  const uploadId = await uploadInChunks('/drop/upload-chunk', file, sessionId, onProgress, onPhase);
   if (onPhase) onPhase('finalizing');
   if (onProgress) onProgress({ percent: 100, uploadedBytes: file.size, totalBytes: file.size });
 
@@ -545,6 +570,42 @@ async function uploadDropChunks(file, sessionId, password, onProgress, onPhase) 
   }
 
   throw new Error('Failed to finalize upload');
+}
+
+// Uploads one file in chunks and returns { uploadId, path, filename, size }.
+async function stageFile(file, sessionId, onProgress) {
+  const uploadId = await uploadInChunks('/upload/chunk', file, sessionId, onProgress);
+  const response = await fetch(`${API_BASE}/upload/finalize`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uploadId, filename: file.name, type: file.type, sessionId }),
+  });
+  if (!response.ok) throw new Error(await readError(response, 'Upload failed'));
+  return response.json();
+}
+
+// Adds files to a tool request: inline when the request stays under
+// Cloudflare's limit, otherwise uploaded first in chunks and named in a
+// `staged` field. Upload progress is reported through onJobUpdate.
+async function appendFiles(formData, field, files, sessionId, callbacks = {}) {
+  const total = files.reduce((sum, file) => sum + file.size, 0);
+  if (total <= SINGLE_REQUEST_BUDGET) {
+    files.forEach((file) => formData.append(field, file));
+    return;
+  }
+  const ids = [];
+  let sent = 0;
+  for (const file of files) {
+    const staged = await stageFile(file, sessionId, ({ uploadedBytes }) => {
+      if (callbacks.onJobUpdate) {
+        callbacks.onJobUpdate({ id: null, status: 'uploading', progress: Math.min(99, Math.round(((sent + uploadedBytes) / total) * 100)) });
+      }
+    });
+    ids.push(staged.uploadId);
+    sent += file.size;
+  }
+  formData.append('staged', JSON.stringify(ids));
 }
 
 export async function finalizeUpload(uploadId, filename, sessionId, trimOptions, callbacks = {}) {
@@ -568,8 +629,7 @@ export async function finalizeUpload(uploadId, filename, sessionId, trimOptions,
   });
 
   if (!finalizeResponse.ok) {
-    const error = await finalizeResponse.json().catch(() => ({ error: 'Finalize failed' }));
-    throw new Error(error.error || 'Finalize failed');
+    throw new Error(await readError(finalizeResponse, 'Finalize failed'));
   }
 
   const { jobId } = await finalizeResponse.json();
