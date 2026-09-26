@@ -306,10 +306,16 @@ body {
 }
 
 .card-header {
-  padding: 16px 20px 0;
+  padding: 16px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+/* The header keeps its own bottom space (a table can follow it directly);
+   a body right under it doesn't add a second gap. */
+.card-header + .card-body {
+  padding-top: 0;
 }
 
 .card-title {
