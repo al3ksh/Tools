@@ -3,6 +3,7 @@ import { QrCode as QrCodeIcon, Download, Copy } from 'lucide-react';
 import { api } from '../api';
 import useToast from '../hooks/useToast';
 import ColorPicker from '../components/ColorPicker';
+import Select from '../components/Select';
 
 const EC_LEVELS = [
   { value: 'L', pct: '7%' },
@@ -164,15 +165,14 @@ export default function QRCode() {
                 <div style={{ flex: 1 }}>
                   <div style={sectionLabel}>Size</div>
                   <div style={{ position: 'relative' }}>
-                    <select
+                    <Select
                       className="form-input"
                       value={size}
                       onChange={(e) => setSize(parseInt(e.target.value))}
-                      style={{ padding: '5px 28px 5px 10px', fontSize: '13px', appearance: 'none', cursor: 'pointer' }}
+                      style={{ padding: '5px 10px', fontSize: '13px' }}
                     >
                       {SIZE_OPTIONS.map((s) => <option key={s} value={s}>{s} × {s}</option>)}
-                    </select>
-                    <div style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text-secondary)', fontSize: '10px' }}>▾</div>
+                    </Select>
                   </div>
                 </div>
               </div>

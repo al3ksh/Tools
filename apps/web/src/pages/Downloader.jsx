@@ -7,6 +7,7 @@ import Pagination from '../components/Pagination';
 import JobProgress from '../components/JobProgress';
 import useToast from '../hooks/useToast';
 import useConfirm from '../hooks/useConfirm';
+import Select from '../components/Select';
 
 function Downloader({ sessionId }) {
   const [url, setUrl] = useState('');
@@ -179,11 +180,11 @@ function Downloader({ sessionId }) {
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Quality Preset</label>
-                    <select className="form-input" value={preset} onChange={(e) => setPreset(e.target.value)}>
+                    <Select className="form-input" value={preset} onChange={(e) => setPreset(e.target.value)}>
                       {PRESETS.map(p => (
                         <option key={p.value} value={p.value}>{p.label}</option>
                       ))}
-                    </select>
+                    </Select>
                   </div>
                 </div>
 

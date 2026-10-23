@@ -9,6 +9,7 @@ import Pagination from '../components/Pagination';
 import FileUploader from '../components/FileUploader';
 import useToast from '../hooks/useToast';
 import useConfirm from '../hooks/useConfirm';
+import Select from '../components/Select';
 
 function Converter({ sessionId, isAdmin }) {
   const [formData, setFormData] = useState({
@@ -222,33 +223,33 @@ function Converter({ sessionId, isAdmin }) {
               <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">Output Format</label>
-                  <select className="form-input" value={formData.format} onChange={(e) => handleInputChange('format', e.target.value)}>
+                  <Select className="form-input" value={formData.format} onChange={(e) => handleInputChange('format', e.target.value)}>
                     <option value="flac">FLAC (Lossless)</option>
                     <option value="mp3">MP3 (Compressed)</option>
                     <option value="wav">WAV (Uncompressed)</option>
                     <option value="opus">Opus (Modern)</option>
-                  </select>
+                  </Select>
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">Loudness Preset</label>
-                  <select className="form-input" value={formData.preset} onChange={(e) => handleInputChange('preset', e.target.value)}>
+                  <Select className="form-input" value={formData.preset} onChange={(e) => handleInputChange('preset', e.target.value)}>
                     <option value="quiet">Quiet (-16 LUFS)</option>
                     <option value="medium">Medium (-14 LUFS)</option>
                     <option value="loud">Loud (-12 LUFS)</option>
                     <option value="very-loud">Very Loud (-10 LUFS)</option>
                     <option value="none">No normalization</option>
-                  </select>
+                  </Select>
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">Audio Bitrate</label>
-                  <select className="form-input" value={formData.audioBitrate} onChange={(e) => handleInputChange('audioBitrate', e.target.value)}>
+                  <Select className="form-input" value={formData.audioBitrate} onChange={(e) => handleInputChange('audioBitrate', e.target.value)}>
                     <option value="128">128 kbps</option>
                     <option value="192">192 kbps</option>
                     <option value="256">256 kbps</option>
                     <option value="320">320 kbps</option>
-                  </select>
+                  </Select>
                 </div>
               </div>
 

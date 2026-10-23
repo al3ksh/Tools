@@ -5,6 +5,7 @@ import { LayoutDashboard, RefreshCw, FolderOpen, Clock, CheckCircle, XCircle, Za
 import JobProgress from '../components/JobProgress';
 import Pagination from '../components/Pagination';
 import { KadronHero } from '../components/Kadron';
+import Select from '../components/Select';
 
 const TOOLS = [
   { to: '/downloader', icon: Download, title: 'Downloader', desc: 'YouTube, TikTok, Instagram, X and 1000+ sites' },
@@ -160,7 +161,7 @@ function Dashboard({ sessionId, isAdmin }) {
         <div className="card">
           <div className="card-header">
             <div className="card-title"><ClipboardList size={18} /> Recent Jobs</div>
-            <select
+            <Select
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               className="form-input"
@@ -174,7 +175,7 @@ function Dashboard({ sessionId, isAdmin }) {
               <option value="gif">GIF</option>
               <option value="clip">Clips</option>
               <option value="compress">Compressions</option>
-            </select>
+            </Select>
           </div>
           <div className="table-container">
             {filteredJobs.length === 0 ? (

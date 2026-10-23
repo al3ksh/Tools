@@ -441,6 +441,94 @@ select.form-input {
   cursor: pointer;
 }
 
+.select {
+  position: relative;
+}
+
+.select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  line-height: inherit;
+}
+
+.select-trigger:hover:not(:disabled) {
+  border-color: var(--text-secondary);
+}
+
+.select.open .select-trigger {
+  border-color: var(--accent);
+}
+
+.select-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform 0.15s;
+}
+
+.select.open .select-chevron {
+  transform: rotate(180deg);
+}
+
+.select-menu {
+  position: fixed;
+  overflow-y: auto;
+  z-index: 1100;
+  list-style: none;
+  padding: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px var(--shadow);
+  animation: select-in 0.12s ease-out;
+}
+
+.select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.select-option.active {
+  background: var(--bg-hover);
+}
+
+.select-option.selected {
+  color: var(--accent-text);
+}
+
+.select-option[aria-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@keyframes select-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
 .form-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

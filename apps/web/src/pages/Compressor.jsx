@@ -8,6 +8,7 @@ import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import useToast from '../hooks/useToast';
 import useConfirm from '../hooks/useConfirm';
+import Select from '../components/Select';
 
 function getKind(file) {
   if (!file) return 'video';
@@ -173,20 +174,20 @@ function Compressor({ sessionId, isAdmin }) {
               {!file && (
                 <div className="form-group">
                   <label className="form-label">Media Type</label>
-                  <select className="form-input" value={mediaKind} onChange={(e) => setMediaKind(e.target.value)}>
+                  <Select className="form-input" value={mediaKind} onChange={(e) => setMediaKind(e.target.value)}>
                     <option value="video">Video / GIF</option>
                     <option value="image">Image</option>
-                  </select>
+                  </Select>
                 </div>
               )}
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
                 <div className="form-group">
                   <label className="form-label">Mode</label>
-                  <select className="form-input" value={mode} onChange={(e) => setMode(e.target.value)}>
+                  <Select className="form-input" value={mode} onChange={(e) => setMode(e.target.value)}>
                     <option value="target">Target size</option>
                     <option value="quality">Quality</option>
-                  </select>
+                  </Select>
                 </div>
                 {mode === 'target' ? (
                   <div className="form-group">
@@ -205,7 +206,7 @@ function Compressor({ sessionId, isAdmin }) {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Output Format</label>
-                  <select className="form-input" value={format} onChange={(e) => setFormat(e.target.value)}>
+                  <Select className="form-input" value={format} onChange={(e) => setFormat(e.target.value)}>
                     {kind === 'video' ? (
                       <>
                         <option value="mp4">MP4</option>
@@ -220,7 +221,7 @@ function Compressor({ sessionId, isAdmin }) {
                         <option value="gif">GIF</option>
                       </>
                     )}
-                  </select>
+                  </Select>
                 </div>
               </div>
 
