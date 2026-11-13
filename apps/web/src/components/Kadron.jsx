@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowUpRight, Download, Github, X } from 'lucide-react';
+import { ArrowUpRight, Cpu, Download, Film, Github, X, Zap } from 'lucide-react';
 
 // Tools is the web edition of Kadron: same palette, same controls, and a
 // clear way to the desktop app.
@@ -48,6 +48,12 @@ export function KadronPromo() {
 
 const HERO_DISMISSED = 'kadronHeroDismissed';
 
+const HERO_SPECS = [
+  { icon: Cpu, title: '100% Local & Offline', desc: 'Zero uploads, no file expiry' },
+  { icon: Film, title: 'Multi-track Timeline', desc: 'Video, waveform & filmstrip cut' },
+  { icon: Zap, title: 'Native Engine', desc: 'FFmpeg & yt-dlp built right in' },
+];
+
 // Dashboard banner: what Kadron is and where to get it. Closing it is
 // remembered; the sidebar card still links to Kadron.
 export function KadronHero() {
@@ -65,18 +71,40 @@ export function KadronHero() {
       className={`kadron-hero${closing ? ' is-closing' : ''}`}
       onAnimationEnd={(e) => { if (closing && e.target === e.currentTarget) setDismissed(true); }}
     >
+      <span className="kadron-frame-corner is-tl" aria-hidden="true" />
+      <span className="kadron-frame-corner is-bl" aria-hidden="true" />
       <button type="button" className="kadron-hero-close" onClick={close} aria-label="Hide this banner" title="Hide">
         <X size={16} />
       </button>
       <div className="kadron-hero-copy">
-        <div className="kadron-eyebrow"><KadronMark size={18} /> POWERED BY KADRON</div>
-        <h3>The desktop studio behind Tools</h3>
+        <div className="kadron-eyebrow-row">
+          <div className="kadron-eyebrow">
+            <span className="kadron-pulse" aria-hidden="true" />
+            <KadronMark size={16} /> POWERED BY KADRON
+          </div>
+          <span className="kadron-eyebrow-tag">WINDOWS DESKTOP STUDIO · FREE &amp; OPEN SOURCE</span>
+        </div>
+        <h3>
+          The desktop studio behind Tools —{' '}
+          <span className="kadron-hero-highlight">without upload limits.</span>
+        </h3>
         <p>
-          Kadron runs these tools on your own computer, with nothing uploaded, and adds a
-          timeline editor: trim audio on the waveform, cut GIFs on a filmstrip, and edit PDFs page by page.
+          Run every tool locally on your hardware at native speed, plus a full multi-track
+          timeline editor for video, audio waveforms, GIF filmstrips, and PDFs.
         </p>
+        <div className="kadron-specs">
+          {HERO_SPECS.map(({ icon: Icon, title, desc }) => (
+            <div key={title} className="kadron-spec">
+              <span className="kadron-spec-icon"><Icon size={15} /></span>
+              <span className="kadron-spec-text">
+                <strong>{title}</strong>
+                <span>{desc}</span>
+              </span>
+            </div>
+          ))}
+        </div>
         <div className="kadron-hero-actions">
-          <a className="btn btn-primary" href={KADRON_DOWNLOAD} target="_blank" rel="noopener noreferrer">
+          <a className="btn btn-primary kadron-cta-btn" href={KADRON_DOWNLOAD} target="_blank" rel="noopener noreferrer">
             <Download size={16} /> Download for Windows
           </a>
           <a className="btn btn-secondary" href={KADRON_REPO} target="_blank" rel="noopener noreferrer">
@@ -84,9 +112,27 @@ export function KadronHero() {
           </a>
         </div>
       </div>
-      <a className="kadron-hero-shot" href={KADRON_REPO} target="_blank" rel="noopener noreferrer" tabIndex={-1}>
-        <img src="/kadron-editor.webp" alt="Kadron's editor with a sequence on the timeline" loading="lazy" />
-      </a>
+      <div className="kadron-hero-stage">
+        <a className="kadron-hero-shot" href={KADRON_REPO} target="_blank" rel="noopener noreferrer" tabIndex={-1}>
+          <div className="kadron-window-bar" aria-hidden="true">
+            <span className="kadron-window-dots">
+              <i /><i /><i />
+            </span>
+            <span className="kadron-window-title">Kadron Media Studio — Editor</span>
+          </div>
+          <img src="/kadron-editor.webp" alt="Kadron's editor with a sequence on the timeline" loading="lazy" />
+        </a>
+        <div className="kadron-floating-badge" aria-hidden="true">
+          <span className="kadron-badge-dot" />
+          <span className="kadron-badge-bars">
+            <i className="waveform-bar" style={{ height: '7px', animationDelay: '0s' }} />
+            <i className="waveform-bar" style={{ height: '12px', animationDelay: '0.15s' }} />
+            <i className="waveform-bar" style={{ height: '9px', animationDelay: '0.3s' }} />
+            <i className="waveform-bar" style={{ height: '14px', animationDelay: '0.45s' }} />
+          </span>
+          <span>00:10.0 · 60 fps Timeline</span>
+        </div>
+      </div>
     </section>
   );
 }
