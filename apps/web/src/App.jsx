@@ -54,7 +54,7 @@ function RouteLoading() {
 }
 
 function App() {
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('adminToken') === 'ui-admin');
 
   const [sessionId] = useState(() => {
     const stored = localStorage.getItem('tools_session');
@@ -264,10 +264,12 @@ function App() {
                 <span className="nav-icon"><Sparkles size={18} /></span>
                 <span>GIF Maker</span>
               </NavLink>
-              <NavLink to="/clips" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
-                <span className="nav-icon"><Film size={18} /></span>
-                <span>Clips</span>
-              </NavLink>
+              {isAdmin && (
+                <NavLink to="/clips" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'} onClick={() => setSidebarOpen(false)}>
+                  <span className="nav-icon"><Film size={18} /></span>
+                  <span>Clips</span>
+                </NavLink>
+              )}
               {isAdmin && (
                 <>
                   <div className="nav-section" style={{ marginTop: '16px' }}>Admin</div>
@@ -340,7 +342,7 @@ function App() {
                 <Route path="/qrcode" element={<QRCode />} />
                 <Route path="/pdf" element={<PDFEditor sessionId={sessionId} isAdmin={isAdmin} />} />
                 <Route path="/gif" element={<GifMaker sessionId={sessionId} isAdmin={isAdmin} />} />
-                <Route path="/clips" element={<Clips sessionId={sessionId} isAdmin={isAdmin} />} />
+                {isAdmin && <Route path="/clips" element={<Clips sessionId={sessionId} isAdmin={isAdmin} />} />}
                 <Route path="/d/:token" element={<DropView />} />
                 <Route path="/c/:token/embed" element={<ClipEmbed />} />
                 <Route path="/c/:token" element={<ClipView isAdmin={isAdmin} />} />

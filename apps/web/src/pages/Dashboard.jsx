@@ -11,7 +11,7 @@ const TOOLS = [
   { to: '/downloader', icon: Download, title: 'Downloader', desc: 'YouTube, TikTok, Instagram, X and 1000+ sites' },
   { to: '/converter', icon: FileAudio, title: 'Audio Converter', desc: 'MP3, FLAC, WAV, Opus, trimmed on the waveform' },
   { to: '/compress', icon: PackageOpen, title: 'Compressor', desc: 'Shrink video, audio and images to a target size' },
-  { to: '/clips', icon: Film, title: 'Clips', desc: 'Trim on a filmstrip and share with embeds' },
+  { to: '/clips', icon: Film, title: 'Clips', desc: 'Trim on a filmstrip and share with embeds', adminOnly: true },
   { to: '/gif', icon: Sparkles, title: 'GIF Maker', desc: 'Pick a segment, preview, export' },
   { to: '/pdf', icon: Files, title: 'PDF Editor', desc: 'Edit pages, merge, extract, images to PDF' },
   { to: '/drop', icon: FolderOpen, title: 'Drop', desc: 'Share a file with a link, optional password' },
@@ -59,7 +59,7 @@ function Dashboard({ sessionId, isAdmin }) {
       convert: '/converter',
       pdf: '/pdf',
       gif: '/gif',
-      clip: '/clips',
+      clip: isAdmin ? '/clips' : '/',
       compress: '/compress'
     };
     return routes[type] || '/';
@@ -142,7 +142,7 @@ function Dashboard({ sessionId, isAdmin }) {
           </div>
           <div className="card-body">
             <div className="tool-grid">
-              {TOOLS.map(({ to, icon: Icon, title, desc }) => (
+              {TOOLS.filter((tool) => !tool.adminOnly || isAdmin).map(({ to, icon: Icon, title, desc }) => (
                 <Link key={to} to={to} className="tool-tile">
                   <span className="tool-tile-icon"><Icon size={20} /></span>
                   <span className="tool-tile-text">
@@ -173,7 +173,7 @@ function Dashboard({ sessionId, isAdmin }) {
               <option value="convert">Conversions</option>
               <option value="pdf">PDF</option>
               <option value="gif">GIF</option>
-              <option value="clip">Clips</option>
+              {isAdmin && <option value="clip">Clips</option>}
               <option value="compress">Compressions</option>
             </Select>
           </div>

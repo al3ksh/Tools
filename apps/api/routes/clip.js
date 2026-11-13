@@ -134,6 +134,7 @@ const chunkRateLimit = rateLimit({
 
 router.post('/upload-chunk', chunkRateLimit, diskSpaceGuard, (req, res) => {
   try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const uploadId = req.headers['x-upload-id'];
     if (!uploadId) return res.status(400).json({ error: 'Missing X-Upload-Id header' });
     if (!UPLOAD_ID_RE.test(uploadId)) return res.status(400).json({ error: 'Invalid upload id' });
@@ -237,6 +238,7 @@ router.post('/upload-chunk', chunkRateLimit, diskSpaceGuard, (req, res) => {
 
 router.post('/finalize', (req, res) => {
   try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const { uploadId, filename, sessionId, trimStart, trimEnd, duration } = req.body;
 
     if (!uploadId || !filename) {

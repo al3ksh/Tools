@@ -71,7 +71,7 @@ function ClipView({ isAdmin }) {
     try {
       await api.deleteClip(token, sessionId);
       showToast('Clip deleted');
-      window.location.href = '/clips';
+      window.location.href = isAdmin ? '/clips' : '/';
     } catch (err) {
       showToast(err.message, 'error');
     }
